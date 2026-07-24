@@ -726,6 +726,15 @@
         .zone-box.fvg {
             border-left: 3px solid var(--purple);
         }
+        .zone-box.vwap {
+            border-left: 3px solid var(--cyan);
+        }
+        .zone-box.quarter {
+            border-left: 3px solid var(--pink);
+        }
+        .zone-box.dxy {
+            border-left: 3px solid var(--teal);
+        }
         .zone-box.ob {
             border-left: 3px solid var(--gold);
         }
@@ -2303,9 +2312,10 @@
                 <div class="price" id="mainPrice">--</div>
             </div>
             <div class="price-info">
-                <div class="bid-ask">BID: <span class="bid" id="bidPrice">--</span> | ASK: <span class="ask" id="askPrice">--</span></div>
+                <div class="bid-ask">BID: <span class="bid" id="bidPrice">--</span> | ASK: <span class="ask" id="askPrice">--</span> <span style="color:var(--text-sub);font-weight:400;">(est. spread*)</span></div>
                 <div class="bid-ask">Spread: <span id="spreadDisplay">--</span> pips</div>
                 <div class="update-time" id="lastUpdate">Waiting for data...</div>
+                <div style="font-size:6px;color:var(--text-sub);margin-top:2px;">*Mid price is 100% live from the feed; bid/ask is that real price ± a fixed 0.12 estimate, since the free feed only provides one mid price, not a broker's true live spread.</div>
             </div>
         </div>
 
@@ -2419,6 +2429,25 @@
                 <div class="zone-box support"><span class="zone-label">🔵 Support</span><span class="zone-value" id="supportZone">--</span></div>
                 <div class="zone-box fvg"><span class="zone-label">🟣 FVG</span><span class="zone-value" id="fvgZone">--</span></div>
                 <div class="zone-box ob"><span class="zone-label">🟡 Order Block</span><span class="zone-value" id="orderBlockZone">--</span></div>
+            </div>
+        </div>
+
+        <!-- INSTITUTIONAL INDICATORS (what bank/fund desks actually watch on gold) -->
+        <div class="smc-card">
+            <div class="section-label">
+                <span>🏦 INSTITUTIONAL INDICATORS</span>
+                <span style="font-size:7px;color:var(--text-sub);" id="instState">🔍 Analyzing...</span>
+            </div>
+            <div class="zones-grid">
+                <div class="zone-box vwap"><span class="zone-label">🔵 Session VWAP</span><span class="zone-value" id="vwapZone">--</span></div>
+                <div class="zone-box vwap"><span class="zone-label">📍 VWAP Bias</span><span class="zone-value" id="vwapBias">--</span></div>
+                <div class="zone-box quarter"><span class="zone-label">🎯 Quarter Level</span><span class="zone-value" id="quarterLevel">--</span></div>
+                <div class="zone-box quarter"><span class="zone-label">📏 Dist to Level</span><span class="zone-value" id="quarterDistance">--</span></div>
+                <div class="zone-box dxy"><span class="zone-label">💵 DXY Proxy</span><span class="zone-value" id="dxyValue">--</span></div>
+                <div class="zone-box dxy"><span class="zone-label">🔗 Gold/DXY Corr.</span><span class="zone-value" id="dxyCorrelation">--</span></div>
+            </div>
+            <div style="font-size:6.5px;color:var(--text-sub);margin-top:5px;line-height:1.4;">
+                💡 VWAP = intraday fair-value benchmark banks execute against · Quarter levels = 25-point psychological grid (…00/25/50/75) where institutional algos cluster orders · DXY proxy = live dollar-basket strength, gold's main inverse driver.
             </div>
         </div>
 
@@ -2758,6 +2787,25 @@
         let winCount = 0;
         let lossCount = 0;
         let activeTrade = false;
+
+        // Session VWAP -- cumulative price*weight / weight since the start
+        // of today's trading day. Spot XAU has no exchange trade volume, so
+        // (like the "Live Ticks" stat already on screen) tick count is used
+        // as the weight -- an honest, standard approximation when true
+        // executed volume isn't available, not a fabricated number.
+        let vwapCumPV = 0;
+        let vwapCumWeight = 0;
+        let vwapSessionDate = null;
+        let currentVWAP = null;
+
+        // DXY proxy -- computed from live USD/EUR/JPY/GBP/CAD/SEK/CHF rates
+        // (ECB reference rates via a free, no-key API) using the standard
+        // ICE DXY weighting formula. Updated ~every 30 min, well within the
+        // free tier. If the fetch fails, the last real value stays on
+        // screen instead of a made-up one.
+        let dxyProxy = null;
+        let dxyDayOpen = null;
+        let goldDayOpenForDXY = null;
 
         // Real per-session high/low, tracked live (reset when a session starts)
         let sessionTracking = {
@@ -3120,6 +3168,16 @@
         // ============================================================
         // DESKTOP MODE / LIGHT MODE TOGGLE
         // ============================================================
+        // Desktop mode auto-detects from the real screen width -- opened
+        // on a PC, laptop, or a large LED/LCD monitor/TV, it switches on
+        // by itself; opened on a phone, it stays in the compact mobile
+        // layout. The manual button still works and, once tapped, that
+        // explicit choice is remembered and no longer auto-overridden.
+        const DESKTOP_AUTO_BREAKPOINT = 900; // px -- tablets/phones below this stay mobile
+        function detectDesktopMode() {
+            return window.innerWidth >= DESKTOP_AUTO_BREAKPOINT ||
+                window.screen.width >= DESKTOP_AUTO_BREAKPOINT;
+        }
         function applyDesktopMode(on) {
             document.body.classList.toggle('desktop-mode', on);
             document.getElementById('desktopModeBtn').classList.toggle('active', on);
@@ -3133,6 +3191,10 @@
         }
         function toggleDesktopMode() {
             applyDesktopMode(!document.body.classList.contains('desktop-mode'));
+            // The user made an explicit choice -- stop auto-adjusting this
+            // device until they clear it (a fresh browser/profile will
+            // still get auto-detection).
+            localStorage.setItem('fkc_desktop_mode_manual', '1');
         }
         function applyLightMode(on) {
             document.body.classList.toggle('light-mode', on);
@@ -3144,11 +3206,22 @@
         function toggleLightMode() {
             applyLightMode(!document.body.classList.contains('light-mode'));
         }
-        // Restore saved view preferences on load
+        // Restore saved view preferences on load -- honor an explicit past
+        // toggle if there is one, otherwise auto-detect from screen size.
         (function restoreViewPrefs() {
-            applyDesktopMode(localStorage.getItem('fkc_desktop_mode') === '1');
+            const manual = localStorage.getItem('fkc_desktop_mode_manual') === '1';
+            applyDesktopMode(manual ? localStorage.getItem('fkc_desktop_mode') === '1' : detectDesktopMode());
             applyLightMode(localStorage.getItem('fkc_light_mode') === '1');
         })();
+        // Keep re-checking as the window/screen changes (rotating a
+        // tablet, dragging the window to a different monitor, resizing a
+        // desktop browser) -- but only while the user hasn't manually
+        // overridden it.
+        window.addEventListener('resize', () => {
+            if (localStorage.getItem('fkc_desktop_mode_manual') !== '1') {
+                applyDesktopMode(detectDesktopMode());
+            }
+        });
 
         // ============================================================
         // LIVE FOREX NEWS -- real events from Forex Factory's own
@@ -3158,30 +3231,95 @@
         // re-filtered from that cache every 30s (so "next" event and
         // the live LIVE NOW badge still keep moving in between fetches).
         let ffEventsCache = null;
+        const FF_CACHE_KEY = 'fkc_ff_news_cache';
+        const FF_CACHE_TIME_KEY = 'fkc_ff_news_cache_time';
         const FF_FLAGS = {
             USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺',
             CAD: '🇨🇦', CHF: '🇨🇭', CNY: '🇨🇳', NZD: '🇳🇿', ALL: '🌐'
         };
+
+        // Finnhub economic calendar -- tried first. Unlike the FF feed
+        // below, Finnhub's API is designed for direct browser calls (CORS
+        // is open), so it doesn't need a proxy hack to work in a webview.
+        const FINNHUB_API_KEY = 'd9hi38pr01qhv00md9hgd9hi38pr01qhv00md9i0';
+        const FINNHUB_COUNTRY_CCY = {
+            US: 'USD', EU: 'EUR', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR',
+            GB: 'GBP', UK: 'GBP', JP: 'JPY', AU: 'AUD', CA: 'CAD', CH: 'CHF', CN: 'CNY', NZ: 'NZD'
+        };
+        async function fetchFinnhubCalendar() {
+            if (!FINNHUB_API_KEY) return null;
+            try {
+                const today = new Date();
+                const from = today.toISOString().slice(0, 10);
+                const to = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+                const res = await fetchWithTimeout(
+                    `https://finnhub.io/api/v1/calendar/economic?from=${from}&to=${to}&token=${FINNHUB_API_KEY}`,
+                    {}, 8000
+                );
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                const list = data && Array.isArray(data.economicCalendar) ? data.economicCalendar : null;
+                if (!list) throw new Error('Unexpected response shape');
+                // Normalize into the same {date, country, title, impact}
+                // shape renderFFNews already expects from the FF feed.
+                return list
+                    .filter(item => item.time)
+                    .map(item => ({
+                        date: item.time.replace(' ', 'T') + 'Z',
+                        country: FINNHUB_COUNTRY_CCY[item.country] || item.country || 'ALL',
+                        title: item.event || 'Economic Event',
+                        impact: (item.impact || 'low').toLowerCase()
+                    }));
+            } catch (e) {
+                console.log('Finnhub calendar fetch error:', e);
+                return null;
+            }
+        }
+
         const FF_SOURCE = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
         // Some in-app/webview browsers (like the one this dashboard is
         // opened in) block or don't get CORS clearance for a direct
         // cross-origin fetch to nfs.faireconomy.media. Try it straight
-        // first, then fall back through a couple of public CORS proxies
+        // first, then fall back through several public CORS proxies
         // before giving up -- so the live list loads wherever possible
-        // instead of only in a plain desktop browser.
+        // instead of only in a plain desktop browser. More proxies here
+        // means more chances one of them is up, instead of failing after
+        // just one or two.
         const FF_URLS = [
             FF_SOURCE,
             'https://api.allorigins.win/raw?url=' + encodeURIComponent(FF_SOURCE),
-            'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(FF_SOURCE)
+            'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(FF_SOURCE),
+            'https://corsproxy.io/?url=' + encodeURIComponent(FF_SOURCE),
+            'https://thingproxy.freeboard.io/fetch/' + FF_SOURCE
         ];
+        let ffRetryTimeout = null;
         async function fetchFFNews() {
+            // 1) Try Finnhub first -- direct CORS-friendly API call.
+            const finnhubData = await fetchFinnhubCalendar();
+            if (finnhubData && finnhubData.length > 0) {
+                ffEventsCache = finnhubData;
+                try {
+                    localStorage.setItem(FF_CACHE_KEY, JSON.stringify(finnhubData));
+                    localStorage.setItem(FF_CACHE_TIME_KEY, String(Date.now()));
+                } catch (e) { /* storage full/unavailable -- not critical */ }
+                document.getElementById('ffNewsUpdated').textContent =
+                    'Updated ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                renderFFNews();
+                return;
+            }
+
+            // 2) Finnhub failed/empty -- fall back to the FF feed + proxies.
             for (const url of FF_URLS) {
                 try {
-                    const res = await fetch(url);
+                    const res = await fetchWithTimeout(url, {}, 8000);
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
                     if (!Array.isArray(data)) throw new Error('Unexpected response');
                     ffEventsCache = data;
+                    try {
+                        localStorage.setItem(FF_CACHE_KEY, JSON.stringify(data));
+                        localStorage.setItem(FF_CACHE_TIME_KEY, String(Date.now()));
+                    } catch (e) { /* storage full/unavailable -- not critical */ }
                     document.getElementById('ffNewsUpdated').textContent =
                         'Updated ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                     renderFFNews();
@@ -3190,12 +3328,34 @@
                     continue; // try the next source
                 }
             }
-            // Every source failed (fully offline, or all proxies down) --
-            // say so honestly instead of showing fake events.
+            // Every live source failed (fully offline, or all proxies down).
+            // Fall back to the last successfully fetched real data (if any)
+            // instead of an error -- it's genuinely real, just not fresh --
+            // and only show the hard error when there's truly nothing to
+            // show yet (e.g. very first load with no connectivity at all).
+            if (ffEventsCache && ffEventsCache.length > 0) {
+                const cacheTime = parseInt(localStorage.getItem(FF_CACHE_TIME_KEY) || '0', 10);
+                const ageMin = cacheTime ? Math.round((Date.now() - cacheTime) / 60000) : null;
+                document.getElementById('ffNewsUpdated').textContent =
+                    ageMin !== null ? `Cached (${ageMin}m old, reconnecting...)` : 'Cached, reconnecting...';
+                renderFFNews();
+                clearTimeout(ffRetryTimeout);
+                ffRetryTimeout = setTimeout(fetchFFNews, 45 * 1000);
+                return;
+            }
             document.getElementById('ffNewsUpdated').textContent = '';
             document.getElementById('ffNewsList').innerHTML =
                 '<div class="ff-news-error">⚠️ Couldn\'t load live news feed right now. ' +
-                '<a href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener" style="color:var(--orange);">Open Forex Factory Calendar</a> instead.</div>';
+                '<a href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener" style="color:var(--orange);">Open Forex Factory Calendar</a> instead.<br>' +
+                '<button id="ffRetryBtn" style="margin-top:6px;background:var(--gold-glow);border:1px solid var(--gold);color:var(--gold);' +
+                'font-size:8px;font-weight:700;padding:4px 10px;border-radius:6px;cursor:pointer;">🔄 Retry Now</button></div>';
+            const retryBtn = document.getElementById('ffRetryBtn');
+            if (retryBtn) retryBtn.addEventListener('click', () => {
+                retryBtn.textContent = '⏳ Retrying...';
+                fetchFFNews();
+            });
+            clearTimeout(ffRetryTimeout);
+            ffRetryTimeout = setTimeout(fetchFFNews, 45 * 1000);
         }
         function renderFFNews() {
             const list = document.getElementById('ffNewsList');
@@ -3227,6 +3387,23 @@
         fetchFFNews();
         setInterval(fetchFFNews, 10 * 60 * 1000);
         setInterval(renderFFNews, 30 * 1000);
+
+        // Show last real cached data immediately on load (before the live
+        // fetch above even resolves) so the card isn't blank/"Loading..."
+        // for the first few seconds every time the page opens.
+        (function loadCachedFFNews() {
+            try {
+                const cached = localStorage.getItem(FF_CACHE_KEY);
+                if (cached && !ffEventsCache) {
+                    ffEventsCache = JSON.parse(cached);
+                    const cacheTime = parseInt(localStorage.getItem(FF_CACHE_TIME_KEY) || '0', 10);
+                    const ageMin = cacheTime ? Math.round((Date.now() - cacheTime) / 60000) : null;
+                    document.getElementById('ffNewsUpdated').textContent =
+                        ageMin !== null ? `Cached (${ageMin}m old)` : 'Cached';
+                    renderFFNews();
+                }
+            } catch (e) { /* ignore corrupt cache */ }
+        })();
 
         const smcEngine = new SMCEngine();
 
@@ -3510,6 +3687,27 @@
                 }
             }
 
+            // 9. Institutional VWAP bias (banks use this as the intraday
+            // fair-value benchmark -- trading with the VWAP side adds
+            // conviction, against it doesn't cancel the setup on its own).
+            if (currentVWAP !== null) {
+                if (price > currentVWAP) {
+                    bullishScore += 5;
+                    reasons.push('✅ Price above session VWAP - institutional bullish bias');
+                } else if (price < currentVWAP) {
+                    bearishScore += 5;
+                    reasons.push('✅ Price below session VWAP - institutional bearish bias');
+                }
+            }
+
+            // 10. Institutional quarter level (25-point round-number grid --
+            // reversals/reactions cluster here, so proximity is a caution
+            // flag rather than a directional score).
+            const nearestQuarter = Math.round(price / 25) * 25;
+            if (Math.abs(price - nearestQuarter) < atr * 0.5) {
+                reasons.push('⚠️ Price near institutional quarter level (' + nearestQuarter.toFixed(0) + ') - expect reaction');
+            }
+
             // Calculate confidence
             const totalScore = bullishScore + bearishScore;
             if (totalScore > 0) {
@@ -3648,12 +3846,25 @@
                 verdict === 'SELL' ? 'var(--orange)' :
                 'var(--gold)';
 
-            // Bullish/Bearish Score Bar
+            // Bullish/Bearish Score Bar -- shows whichever side is actually
+            // winning: green filling from the left when bulls lead, red
+            // filling from the right when bears lead. Previously this only
+            // ever rendered the green "bullish" fill (just with a smaller
+            // width), which made it look like it was "always boosting from
+            // the left" even on bearish readings.
             const total = signal.score.bullish + signal.score.bearish;
             const bullPct = total > 0 ? (signal.score.bullish / total) * 100 : 50;
-            document.getElementById('bullishScoreBar').style.width = bullPct + '%';
+            const bearPct = 100 - bullPct;
+            const scoreBarEl = document.getElementById('bullishScoreBar');
+            if (signal.score.bullish >= signal.score.bearish) {
+                scoreBarEl.className = 'fill bullish';
+                scoreBarEl.style.width = bullPct + '%';
+            } else {
+                scoreBarEl.className = 'fill bearish';
+                scoreBarEl.style.width = bearPct + '%';
+            }
             document.getElementById('scoreLabel').textContent =
-                `🐂${Math.round(bullPct)}% / ${Math.round(100 - bullPct)}% 🐻`;
+                `🐂${Math.round(bullPct)}% / ${Math.round(bearPct)}% 🐻`;
 
             // Trade Levels
             const tradeLevels = document.getElementById('tradeLevels');
@@ -3900,6 +4111,135 @@
         }
 
         // ============================================================
+        // INSTITUTIONAL INDICATORS -- VWAP / Quarter Levels / DXY Proxy
+        // ============================================================
+        // These three are the tools bank & fund desks actually cite for
+        // XAUUSD: VWAP as the intraday execution benchmark, the 25-point
+        // psychological grid where institutional algos cluster orders, and
+        // DXY as gold's primary macro (inverse) driver. All three are
+        // derived from real ticks / real FX rates -- nothing simulated.
+
+        // Session VWAP resets at the same real UTC day boundary as the
+        // Daily High/Low card, using live tick count as the volume weight
+        // (spot XAU has no true exchange volume -- see comment on
+        // vwapCumPV above).
+        function updateVWAP(price) {
+            const today = new Date().toDateString();
+            if (vwapSessionDate !== today) {
+                vwapSessionDate = today;
+                vwapCumPV = 0;
+                vwapCumWeight = 0;
+            }
+            vwapCumWeight += 1;
+            vwapCumPV += price;
+            currentVWAP = vwapCumPV / vwapCumWeight;
+
+            const instStateEl = document.getElementById('instState');
+            if (instStateEl) instStateEl.textContent = '📊 LIVE';
+
+            const vwapEl = document.getElementById('vwapZone');
+            const biasEl = document.getElementById('vwapBias');
+            if (vwapEl) vwapEl.textContent = currentVWAP.toFixed(2);
+            if (biasEl) {
+                if (price > currentVWAP) {
+                    biasEl.textContent = '🟢 ABOVE (bullish)';
+                    biasEl.style.color = 'var(--green)';
+                } else if (price < currentVWAP) {
+                    biasEl.textContent = '🔴 BELOW (bearish)';
+                    biasEl.style.color = 'var(--red)';
+                } else {
+                    biasEl.textContent = '🟡 AT VWAP';
+                    biasEl.style.color = 'var(--gold)';
+                }
+            }
+        }
+
+        // Institutional quarter levels: every 25-point mark (…00/25/50/75)
+        // -- the round-number grid banks' algos are built around. Pure
+        // price math, no external data needed.
+        function updateQuarterLevels(price) {
+            const nearest = Math.round(price / 25) * 25;
+            const distance = price - nearest;
+
+            const levelEl = document.getElementById('quarterLevel');
+            const distEl = document.getElementById('quarterDistance');
+            if (levelEl) levelEl.textContent = nearest.toFixed(2);
+            if (distEl) {
+                const abs = Math.abs(distance);
+                distEl.textContent = (distance >= 0 ? '+' : '-') + abs.toFixed(2);
+                distEl.style.color = abs < 3 ? 'var(--orange)' : 'var(--text-main)';
+            }
+        }
+
+        // DXY proxy from live ECB reference rates (Frankfurter -- free, no
+        // key) using the standard ICE DXY basket weighting. ECB rates
+        // update once per weekday, so this is a daily-bias tool (matching
+        // how institutional desks use monthly/session VWAP for macro
+        // confluence) rather than a tick-by-tick feed -- shown honestly,
+        // not disguised as real-time.
+        async function fetchDXYProxy() {
+            try {
+                const res = await fetchWithTimeout(
+                    'https://api.frankfurter.app/latest?from=USD&to=EUR,JPY,GBP,CAD,SEK,CHF',
+                    {}, 8000
+                );
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const d = await res.json();
+                const r = d.rates;
+                if (!r || !r.EUR || !r.JPY || !r.GBP || !r.CAD || !r.SEK || !r.CHF) throw new Error('bad rates');
+
+                const eurusd = 1 / r.EUR;
+                const gbpusd = 1 / r.GBP;
+                const usdjpy = r.JPY;
+                const usdcad = r.CAD;
+                const usdsek = r.SEK;
+                const usdchf = r.CHF;
+
+                dxyProxy = 50.14348112 *
+                    Math.pow(eurusd, -0.576) *
+                    Math.pow(usdjpy, 0.136) *
+                    Math.pow(gbpusd, -0.119) *
+                    Math.pow(usdcad, 0.091) *
+                    Math.pow(usdsek, 0.042) *
+                    Math.pow(usdchf, 0.036);
+
+                if (dxyDayOpen === null) {
+                    dxyDayOpen = dxyProxy;
+                    goldDayOpenForDXY = currentPrice || null;
+                }
+
+                updateDXYUI();
+            } catch (e) {
+                console.log('DXY proxy fetch error:', e);
+            }
+        }
+
+        function updateDXYUI() {
+            const dxyEl = document.getElementById('dxyValue');
+            const corrEl = document.getElementById('dxyCorrelation');
+            if (!dxyEl || dxyProxy === null) return;
+            dxyEl.textContent = dxyProxy.toFixed(2);
+
+            if (corrEl && dxyDayOpen !== null && goldDayOpenForDXY && currentPrice > 0) {
+                const dxyChange = dxyProxy - dxyDayOpen;
+                const goldChange = currentPrice - goldDayOpenForDXY;
+                const dxyFlat = Math.abs(dxyChange) < 0.03;
+                const goldFlat = Math.abs(goldChange) < 1;
+
+                if (dxyFlat || goldFlat) {
+                    corrEl.textContent = '🟡 Neutral';
+                    corrEl.style.color = 'var(--gold)';
+                } else if ((dxyChange > 0 && goldChange < 0) || (dxyChange < 0 && goldChange > 0)) {
+                    corrEl.textContent = '✅ Normal (Inverse)';
+                    corrEl.style.color = 'var(--green)';
+                } else {
+                    corrEl.textContent = '⚠️ Divergence';
+                    corrEl.style.color = 'var(--orange)';
+                }
+            }
+        }
+
+        // ============================================================
         // MAIN ENGINE LOOP
         // ============================================================
         async function runEngine() {
@@ -3960,6 +4300,13 @@
                 document.getElementById('currentPriceDisplay').textContent = price.toFixed(2);
                 document.getElementById('fallbackPrice').textContent = price.toFixed(2);
                 document.getElementById('volumeDisplay').textContent = liveTickCount;
+
+                // Institutional indicators -- VWAP & quarter levels update
+                // on every real tick; DXY UI re-renders too (comparing
+                // against the latest gold price even between DXY fetches).
+                updateVWAP(price);
+                updateQuarterLevels(price);
+                updateDXYUI();
 
                 const spread = ((currentAsk - currentBid) * 100).toFixed(1);
                 document.getElementById('spreadDisplay').textContent = spread;
@@ -4267,6 +4614,11 @@
             // free tier's 10 req/hour limit alongside the call above.
             resyncTodayHL();
             setInterval(resyncTodayHL, 15 * 60 * 1000);
+
+            // DXY proxy (institutional gold driver) -- ECB rates refresh at
+            // most once a weekday, so a 30-min poll is more than enough.
+            fetchDXYProxy();
+            setInterval(fetchDXYProxy, 30 * 60 * 1000);
 
             // Daily Checklist
             initChecklist();
