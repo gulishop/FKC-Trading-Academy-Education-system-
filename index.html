@@ -3914,12 +3914,18 @@
                 reasons.push('⚠️ Market indecision - wait for clear signal');
             }
 
-            // Add news filter
-            if (newsFilterEnabled && hasHighImpactNews()) {
-                action = 'WAIT';
-                verdict = 'WAIT (News)';
-                confidence = Math.min(confidence, 50);
-                reasons.push('⚠️ High impact news - waiting');
+            // News warning -- does NOT block the signal anymore. It only
+            // flags that a real high-impact USD event (from the live
+            // Finnhub/FF Economic Calendar cache) is within +/-15 min of
+            // now, caps confidence to reflect spread/slippage risk in that
+            // window, and adds a visible warning reason. Trader still
+            // decides; nothing is silently hidden.
+            if (newsFilterEnabled) {
+                const activeNews = hasHighImpactNews();
+                if (activeNews) {
+                    confidence = Math.min(confidence, NEWS_CONFIDENCE_CAP);
+                    reasons.push(`⚠️ High-Impact News Active (${activeNews.country} ${activeNews.title}) — Wider SL Recommended`);
+                }
             }
 
             // Calculate levels
@@ -3957,10 +3963,31 @@
             };
         }
 
+        // Confidence ceiling applied when a real high-impact event is
+        // active (see hasHighImpactNews below) -- reflects genuine
+        // spread/slippage risk around news releases, not an arbitrary cap.
+        const NEWS_CONFIDENCE_CAP = 85;
+        // How close to "now" (in minutes, each direction) a high-impact
+        // event counts as "active" for the warning.
+        const NEWS_WARNING_WINDOW_MIN = 15;
+
         function hasHighImpactNews() {
-            // Check if there's high impact news in the next 2 hours
-            // For demo, return false
-            return false;
+            // Real check against the live Economic Calendar cache
+            // (ffEventsCache -- populated by fetchFFNews()/fetchFinnhubCalendar()
+            // above from Finnhub, or the Forex Factory feed as fallback).
+            // XAUUSD moves primarily on USD releases, so only USD (and
+            // genuinely global "ALL") high-impact events count here.
+            if (!ffEventsCache || ffEventsCache.length === 0) return null;
+            const now = Date.now();
+            const windowMs = NEWS_WARNING_WINDOW_MIN * 60000;
+            const active = ffEventsCache.find(e => {
+                if (!e.impact || e.impact.toLowerCase() !== 'high') return false;
+                if (e.country !== 'USD' && e.country !== 'ALL') return false;
+                const evTime = new Date(e.date).getTime();
+                if (isNaN(evTime)) return false;
+                return Math.abs(now - evTime) <= windowMs;
+            });
+            return active || null;
         }
 
         // toggleNewsFilter() removed -- the news filter toggle button was
