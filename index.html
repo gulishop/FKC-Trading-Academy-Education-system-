@@ -152,6 +152,16 @@
         body.desktop-mode {
             font-size: clamp(12px, 0.9vw, 20px);
         }
+        /* Tablet range (iPad portrait/landscape and similar, 700-899px) --
+           below the full desktop-mode auto-trigger (900px) but too wide to
+           stay locked in the narrow 500px phone column. Widens the card
+           column to use the extra space without switching into the
+           heavier desktop-mode scaling hacks meant for laptops/TVs. */
+        @media (min-width: 700px) and (max-width: 899px) {
+            body:not(.desktop-mode) .app {
+                max-width: 640px;
+            }
+        }
         @media (min-width: 700px) {
             body.desktop-mode .price-display,
             body.desktop-mode .session-indicator {
@@ -2118,6 +2128,84 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* ============================================================
+           EXNESS SIGNUP POPUP
+           ============================================================ */
+        .exness-popup-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .exness-popup-overlay.show {
+            display: flex;
+        }
+        .exness-popup-card {
+            background: var(--bg-card);
+            border: 1px solid var(--gold);
+            border-radius: 16px;
+            padding: 24px 20px;
+            max-width: 340px;
+            width: 100%;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 0 30px rgba(245, 158, 11, 0.25);
+        }
+        .exness-popup-close {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            color: var(--text-sub);
+            font-size: 20px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            line-height: 1;
+        }
+        .exness-popup-icon {
+            font-size: 36px;
+            margin-bottom: 8px;
+        }
+        .exness-popup-title {
+            font-size: 17px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+        .exness-popup-desc {
+            font-size: 13px;
+            color: var(--text-sub);
+            margin-bottom: 18px;
+            line-height: 1.5;
+        }
+        .exness-popup-btn {
+            display: block;
+            width: 100%;
+            background: var(--gold);
+            color: #0f172a;
+            font-weight: 800;
+            font-size: 14px;
+            padding: 12px;
+            border-radius: 10px;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+        }
+        .exness-popup-later {
+            display: block;
+            width: 100%;
+            background: none;
+            color: var(--text-sub);
+            font-size: 12px;
+            padding: 10px;
+            border: none;
+            cursor: pointer;
+        }
     </style>
 
     <!-- ============================================================
@@ -2902,14 +2990,46 @@
             { number: 1, text: "Always use Stop Loss in every trade", desc: "Protect your capital from unexpected market movements" },
             { number: 2, text: "Risk only 1-2% of your account per trade", desc: "Never risk more than you can afford to lose" },
             { number: 3, text: "Wait for 3+ confirmations before entry", desc: "Higher confidence signals with better accuracy" },
-            { number: 4, text: "Use ATR-based dynamic Stop Loss", desc: "Adjust SL based on market volatility" }
+            { number: 4, text: "Use ATR-based dynamic Stop Loss", desc: "Adjust SL based on market volatility" },
+            { number: 5, text: "Never add to a losing position", desc: "Averaging down turns a small loss into a big one" },
+            { number: 6, text: "Keep a trading journal for every trade", desc: "Track what works and what doesn't over time" },
+            { number: 7, text: "Don't trade with money you can't afford to lose", desc: "Only risk capital that won't affect your daily life" },
+            { number: 8, text: "Avoid overtrading — quality over quantity", desc: "Fewer high-probability trades beat many random ones" },
+            { number: 9, text: "Take a break after 3 consecutive losses", desc: "Step back and reset before emotions take over" },
+            { number: 10, text: "Backtest your strategy before going live", desc: "Prove an edge exists before risking real money" },
+            { number: 11, text: "Set a daily or weekly loss limit", desc: "Stop trading once the limit is hit, no exceptions" },
+            { number: 12, text: "Trade with the higher timeframe trend", desc: "Counter-trend trades need much stronger confirmation" },
+            { number: 13, text: "Don't chase the market after missing an entry", desc: "There is always another setup coming" },
+            { number: 14, text: "Review your trades every week", desc: "Learn from both winners and losers" },
+            { number: 15, text: "Avoid revenge trading after a loss", desc: "Trading to 'get even' usually causes bigger losses" },
+            { number: 16, text: "Keep leverage reasonable for your account size", desc: "High leverage magnifies losses as much as gains" },
+            { number: 17, text: "Have a clear plan before entering any trade", desc: "Know your entry, SL, and TP in advance" },
+            { number: 18, text: "Never move your Stop Loss further away", desc: "Only move SL to reduce risk, never increase it" },
+            { number: 19, text: "Manage emotions — don't let fear or greed decide", desc: "Discipline beats impulse in the long run" },
+            { number: 20, text: "Protect gains with a trailing Stop Loss", desc: "Lock in profit as the trade moves in your favor" }
         ];
 
         const TRADING_QUOTES = [
             { text: "The trend is your friend until the end when it bends.", author: "Ed Seykota" },
             { text: "Risk comes from not knowing what you're doing.", author: "Warren Buffett" },
             { text: "Smart Money Concept is the key to consistent profits.", author: "FKC Academy" },
-            { text: "Trading is 20% strategy and 80% psychology.", author: "Unknown" }
+            { text: "Trading is 20% strategy and 80% psychology.", author: "Unknown" },
+            { text: "Cut your losses short and let your profits run.", author: "Jesse Livermore" },
+            { text: "The market can stay irrational longer than you can stay solvent.", author: "John Maynard Keynes" },
+            { text: "Plan your trade and trade your plan.", author: "Trading Proverb" },
+            { text: "In trading, it's not about being right, it's about how much you make when right.", author: "George Soros" },
+            { text: "The four most dangerous words in investing are 'this time it's different'.", author: "Sir John Templeton" },
+            { text: "An investment in knowledge pays the best interest.", author: "Benjamin Franklin" },
+            { text: "The goal of a trader is to trade well, not to make money.", author: "Alexander Elder" },
+            { text: "Losing is part of the game — protect your capital first.", author: "Paul Tudor Jones" },
+            { text: "Amateurs think about how much money they can make, professionals think about risk.", author: "Jack Schwager" },
+            { text: "Discipline is the bridge between goals and accomplishment.", author: "Jim Rohn" },
+            { text: "The market is a device for transferring money from the impatient to the patient.", author: "Warren Buffett" },
+            { text: "Every trade is a probability, not a certainty.", author: "Trading Proverb" },
+            { text: "Patience is the trader's greatest edge.", author: "FKC Academy" },
+            { text: "Consistency comes from process, not from prediction.", author: "Mark Douglas" },
+            { text: "The market rewards those who follow their plan, not their emotions.", author: "Unknown" },
+            { text: "Preservation of capital comes before profit.", author: "FKC Academy" }
         ];
 
         // ============================================================
@@ -3269,6 +3389,18 @@
             if (localStorage.getItem('fkc_desktop_mode_manual') !== '1') {
                 applyDesktopMode(detectDesktopMode());
             }
+        });
+        // iOS/iPadOS doesn't always fire a clean 'resize' immediately on
+        // rotation -- 'orientationchange' plus a short delay (so
+        // innerWidth/screen.width have settled to the new orientation's
+        // values) makes the auto-adjust reliable when flipping between
+        // portrait and landscape on a phone or iPad.
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                if (localStorage.getItem('fkc_desktop_mode_manual') !== '1') {
+                    applyDesktopMode(detectDesktopMode());
+                }
+            }, 300);
         });
 
         // ============================================================
@@ -4545,21 +4677,50 @@
             });
         }
 
+        // ============================================================
+        // TIME-SLOT HELPER — divides each day into 10 equal slots so
+        // Rule & Quotes content changes 10x/day, same for every visitor
+        // at the same moment, and keeps cycling through the whole pool
+        // over multiple days before repeating.
+        // ============================================================
+        function getGlobalSlot() {
+            const now = new Date();
+            const startOfYear = new Date(now.getFullYear(), 0, 0);
+            const dayOfYear = Math.floor((now - startOfYear) / 86400000);
+            const startOfDay = new Date(now);
+            startOfDay.setHours(0, 0, 0, 0);
+            const msSinceMidnight = now - startOfDay;
+            const slotDurationMs = 86400000 / 10; // 144 minutes per slot
+            const slotToday = Math.floor(msSinceMidnight / slotDurationMs); // 0-9
+            return dayOfYear * 10 + slotToday;
+        }
+        let lastRuleQuoteSlot = -1;
+
         function updateDailyRule() {
-            const rule = TRADING_RULES[ruleIndex % TRADING_RULES.length];
+            const slot = getGlobalSlot();
+            const rule = TRADING_RULES[slot % TRADING_RULES.length];
             document.getElementById('ruleNumber').textContent = rule.number;
             document.getElementById('ruleText').textContent = rule.text;
             document.getElementById('ruleDesc').textContent = rule.desc;
             const shareBtn = document.getElementById('ruleShareBtn');
             if (shareBtn) shareBtn.onclick = () => shareText('📌 RULE #' + rule.number + ': ' + rule.text + '\n' + rule.desc);
-            ruleIndex++;
         }
 
         function renderAllQuotes() {
             const container = document.getElementById('quoteList');
             if (!container) return;
             container.innerHTML = '';
-            TRADING_QUOTES.forEach(quote => {
+            const slot = getGlobalSlot();
+            const poolSize = TRADING_QUOTES.length;
+            // Stride of 7 is coprime with a 20-item pool, so this walks
+            // through 20 distinct starting positions (2 full days) before
+            // repeating, instead of just 5 positions repeating every 12h.
+            const startPos = (slot * 7) % poolSize;
+            const todaysQuotes = [];
+            for (let i = 0; i < 4; i++) {
+                todaysQuotes.push(TRADING_QUOTES[(startPos + i) % poolSize]);
+            }
+            todaysQuotes.forEach(quote => {
                 const shareMsg = '💡 "' + quote.text + '"\n-- ' + quote.author;
                 const item = document.createElement('div');
                 item.className = 'quote-item';
@@ -4571,6 +4732,17 @@
                 container.appendChild(item);
             });
         }
+
+        // Check every minute whether the time slot has advanced; if so,
+        // refresh the Rule card and Quotes without needing a page reload.
+        setInterval(() => {
+            const slot = getGlobalSlot();
+            if (slot !== lastRuleQuoteSlot) {
+                lastRuleQuoteSlot = slot;
+                updateDailyRule();
+                renderAllQuotes();
+            }
+        }, 60000);
 
         let currentSignal = {};
 
@@ -4694,7 +4866,64 @@
             // Start engine
             showNotification('🏛️ FKC Trading Academy', 'SMC AI Engine Active -- Live Data');
             setTimeout(runEngine, 2000);
+
+            // Exness signup popup -- shows once, 5 minutes after the page
+            // loads. Closing it hides it for the rest of this browser tab
+            // session (won't re-show on the same visit).
+            const exnessOverlay = document.getElementById('exnessPopupOverlay');
+            if (exnessOverlay) {
+                const hideExnessPopup = () => exnessOverlay.classList.remove('show');
+                document.getElementById('exnessPopupClose').addEventListener('click', hideExnessPopup);
+                document.getElementById('exnessPopupLater').addEventListener('click', hideExnessPopup);
+                document.getElementById('exnessPopupBtn').addEventListener('click', hideExnessPopup);
+                setTimeout(() => {
+                    if (!sessionStorage.getItem('exnessPopupShown')) {
+                        exnessOverlay.classList.add('show');
+                        sessionStorage.setItem('exnessPopupShown', '1');
+                    }
+                }, 5 * 60 * 1000);
+            }
+
+            // Deriv signup popup -- shows once, 10 minutes after the page
+            // loads (5 minutes after the Exness popup), same one-time-per-
+            // session behavior.
+            const derivOverlay = document.getElementById('derivPopupOverlay');
+            if (derivOverlay) {
+                const hideDerivPopup = () => derivOverlay.classList.remove('show');
+                document.getElementById('derivPopupClose').addEventListener('click', hideDerivPopup);
+                document.getElementById('derivPopupLater').addEventListener('click', hideDerivPopup);
+                document.getElementById('derivPopupBtn').addEventListener('click', hideDerivPopup);
+                setTimeout(() => {
+                    if (!sessionStorage.getItem('derivPopupShown')) {
+                        derivOverlay.classList.add('show');
+                        sessionStorage.setItem('derivPopupShown', '1');
+                    }
+                }, 10 * 60 * 1000);
+            }
         };
     </script>
+    <!-- EXNESS SIGNUP POPUP -->
+    <div class="exness-popup-overlay" id="exnessPopupOverlay">
+        <div class="exness-popup-card">
+            <button class="exness-popup-close" id="exnessPopupClose">✕</button>
+            <div class="exness-popup-icon">💰</div>
+            <div class="exness-popup-title">Start Trading with Exness</div>
+            <div class="exness-popup-desc">Regulated broker, fast withdrawals & tight spreads on XAUUSD. Create your free account in 2 minutes.</div>
+            <a class="exness-popup-btn" id="exnessPopupBtn" href="https://one.exnessonelink.com/a/buhyli14un" target="_blank" rel="noopener">Create Free Account</a>
+            <button class="exness-popup-later" id="exnessPopupLater">Maybe later</button>
+        </div>
+    </div>
+
+    <!-- DERIV SIGNUP POPUP -->
+    <div class="exness-popup-overlay" id="derivPopupOverlay">
+        <div class="exness-popup-card" style="border-color: #25a35a; box-shadow: 0 0 30px rgba(37, 163, 90, 0.25);">
+            <button class="exness-popup-close" id="derivPopupClose">✕</button>
+            <div class="exness-popup-icon">🚀</div>
+            <div class="exness-popup-title">Start Trading with Deriv</div>
+            <div class="exness-popup-desc">Fast execution, CFDs & a $5 minimum deposit. Create your free Deriv account in 2 minutes.</div>
+            <a class="exness-popup-btn" id="derivPopupBtn" href="https://track.deriv.com/_WlJFXVMX3vf1hit6RV3zsGNd7ZgqdRLk/1/?custom2=12e0b91a-aee6-4073-b402-560bea6e6e77" target="_blank" rel="noopener" style="background: #25a35a; color: #fff;">Create Free Account</a>
+            <button class="exness-popup-later" id="derivPopupLater">Maybe later</button>
+        </div>
+    </div>
 </body>
 </html>
