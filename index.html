@@ -2886,6 +2886,25 @@
         let vwapSessionDate = null;
         let currentVWAP = null;
 
+        // Higher-timeframe (HTF) confirmation -- real, not simulated: every
+        // tick's price is logged with a timestamp, persisted to localStorage
+        // so it survives reloads, and bucketed into 15-min candles to read
+        // a genuine longer-term trend (vs. the ~4-minute swing structure
+        // the main SMC engine uses). This needs the bucket history to
+        // actually build up over time -- there's no shortcut to real
+        // historical H1/H4 candles without a paid data feed, so until
+        // enough buckets exist it reports 'insufficient' and doesn't block
+        // anything (see hasHighImpactNews-style honesty note below).
+        const HTF_LOG_KEY = 'fkc_htf_price_log';
+        const HTF_BUCKET_MIN = 15; // bucket size -> ~1h trend needs 4 buckets
+        const HTF_LOOKBACK_MS = 6 * 60 * 60 * 1000; // keep 6h of ticks
+        const HTF_MIN_BUCKETS = 4; // need ~1h of real data before trusting it
+        let htfPriceLog = [];
+        try {
+            const saved = localStorage.getItem(HTF_LOG_KEY);
+            if (saved) htfPriceLog = JSON.parse(saved);
+        } catch (e) { htfPriceLog = []; }
+
         // DXY proxy -- computed from live USD/EUR/JPY/GBP/CAD/SEK/CHF rates
         // (ECB reference rates via a free, no-key API) using the standard
         // ICE DXY weighting formula. Updated ~every 30 min, well within the
@@ -3773,6 +3792,12 @@
             const atr = analysis.atr || 2;
             let bullishScore = 0;
             let bearishScore = 0;
+            // Confluence factor counts -- separate from score, since score
+            // is weighted (trend alone = 25) but a real setup needs
+            // *multiple independent* things lining up, not just one heavy
+            // factor. Used below for the minimum-confluence gate.
+            let bullishFactors = 0;
+            let bearishFactors = 0;
             const reasons = [];
             let action = 'WAIT';
             let verdict = 'Wait';
@@ -3781,9 +3806,11 @@
             // 1. Trend Check
             if (analysis.trend === 'bullish') {
                 bullishScore += 25;
+                bullishFactors++;
                 reasons.push('✅ Bullish trend detected');
             } else if (analysis.trend === 'bearish') {
                 bearishScore += 25;
+                bearishFactors++;
                 reasons.push('✅ Bearish trend detected');
             } else {
                 reasons.push('⚠️ Neutral trend - waiting for direction');
@@ -3793,9 +3820,11 @@
             if (analysis.bosDetected) {
                 if (analysis.trend === 'bullish') {
                     bullishScore += 15;
+                    bullishFactors++;
                     reasons.push('✅ Bullish BOS detected');
                 } else if (analysis.trend === 'bearish') {
                     bearishScore += 15;
+                    bearishFactors++;
                     reasons.push('✅ Bearish BOS detected');
                 }
             } else {
@@ -3806,9 +3835,11 @@
             if (analysis.chochDetected) {
                 if (analysis.trend === 'bullish') {
                     bullishScore += 10;
+                    bullishFactors++;
                     reasons.push('✅ Bullish CHoCH detected');
                 } else if (analysis.trend === 'bearish') {
                     bearishScore += 10;
+                    bearishFactors++;
                     reasons.push('✅ Bearish CHoCH detected');
                 }
             }
@@ -3817,9 +3848,11 @@
             if (analysis.liquiditySweep) {
                 if (analysis.trend === 'bullish') {
                     bullishScore += 10;
+                    bullishFactors++;
                     reasons.push('✅ Liquidity sweep - bullish reversal');
                 } else if (analysis.trend === 'bearish') {
                     bearishScore += 10;
+                    bearishFactors++;
                     reasons.push('✅ Liquidity sweep - bearish reversal');
                 }
             }
@@ -3827,9 +3860,11 @@
             // 5. Premium/Discount
             if (analysis.premiumDiscount === 'discount') {
                 bullishScore += 10;
+                bullishFactors++;
                 reasons.push('✅ Price in discount zone - buy opportunity');
             } else if (analysis.premiumDiscount === 'premium') {
                 bearishScore += 10;
+                bearishFactors++;
                 reasons.push('✅ Price in premium zone - sell opportunity');
             }
 
@@ -3848,9 +3883,11 @@
             // 7. Momentum
             if (analysis.momentum > 1) {
                 bullishScore += 10;
+                bullishFactors++;
                 reasons.push('✅ Positive momentum');
             } else if (analysis.momentum < -1) {
                 bearishScore += 10;
+                bearishFactors++;
                 reasons.push('✅ Negative momentum');
             }
 
@@ -3859,10 +3896,12 @@
             if (zones) {
                 if (zones.support && price > zones.support && price - zones.support < atr) {
                     bullishScore += 10;
+                    bullishFactors++;
                     reasons.push('✅ Price near support zone');
                 }
                 if (zones.resistance && price < zones.resistance && zones.resistance - price < atr) {
                     bearishScore += 10;
+                    bearishFactors++;
                     reasons.push('✅ Price near resistance zone');
                 }
             }
@@ -3873,9 +3912,11 @@
             if (currentVWAP !== null) {
                 if (price > currentVWAP) {
                     bullishScore += 5;
+                    bullishFactors++;
                     reasons.push('✅ Price above session VWAP - institutional bullish bias');
                 } else if (price < currentVWAP) {
                     bearishScore += 5;
+                    bearishFactors++;
                     reasons.push('✅ Price below session VWAP - institutional bearish bias');
                 }
             }
@@ -3896,22 +3937,62 @@
 
             // Determine action
             const diff = Math.abs(bullishScore - bearishScore);
-            const threshold = 25;
+            // Raised from 25 -- a wider score gap is required before the
+            // engine commits to a direction, so borderline/noisy readings
+            // fall through to WAIT instead of a low-conviction BUY/SELL.
+            const threshold = 35;
+            // A real setup needs multiple independent things lining up,
+            // not just one heavy factor (e.g. trend alone is worth 25 and
+            // used to be enough on its own to clear the old threshold).
+            const MIN_CONFLUENCE_FACTORS = 3;
 
             if (diff > threshold) {
                 if (bullishScore > bearishScore) {
-                    action = 'BUY';
-                    if (bullishScore > 70) verdict = 'STRONG BUY';
-                    else verdict = 'BUY';
+                    if (bullishFactors < MIN_CONFLUENCE_FACTORS) {
+                        action = 'WAIT';
+                        verdict = 'WAIT';
+                        reasons.push(`⚠️ Only ${bullishFactors} confirming factor(s) — need ${MIN_CONFLUENCE_FACTORS}+ for a BUY`);
+                    } else {
+                        action = 'BUY';
+                        verdict = bullishScore > 70 ? 'STRONG BUY' : 'BUY';
+                    }
                 } else {
-                    action = 'SELL';
-                    if (bearishScore > 70) verdict = 'STRONG SELL';
-                    else verdict = 'SELL';
+                    if (bearishFactors < MIN_CONFLUENCE_FACTORS) {
+                        action = 'WAIT';
+                        verdict = 'WAIT';
+                        reasons.push(`⚠️ Only ${bearishFactors} confirming factor(s) — need ${MIN_CONFLUENCE_FACTORS}+ for a SELL`);
+                    } else {
+                        action = 'SELL';
+                        verdict = bearishScore > 70 ? 'STRONG SELL' : 'SELL';
+                    }
                 }
             } else {
                 action = 'WAIT';
                 verdict = 'WAIT';
                 reasons.push('⚠️ Market indecision - wait for clear signal');
+            }
+
+            // Higher-timeframe confirmation -- a real, independently-tracked
+            // longer-term trend (see getHTFTrend above), not the same short
+            // buffer the score above already used. If it directly conflicts
+            // with the direction just chosen, downgrade to WAIT rather than
+            // fight the bigger trend. If there isn't enough real history
+            // yet (fresh page load / early in the session), this does NOT
+            // block anything -- an honest "insufficient data" skips the
+            // check instead of faking a result.
+            if (action === 'BUY' || action === 'SELL') {
+                const htfTrend = getHTFTrend();
+                if (htfTrend === 'insufficient') {
+                    reasons.push('⏳ HTF trend still building (need ~1h of live data) — not yet used to confirm');
+                } else if ((action === 'BUY' && htfTrend === 'bearish') || (action === 'SELL' && htfTrend === 'bullish')) {
+                    reasons.push(`⚠️ Higher-timeframe trend (${htfTrend}) conflicts with this ${action} — skipped`);
+                    action = 'WAIT';
+                    verdict = 'WAIT (HTF conflict)';
+                } else if (htfTrend === 'neutral') {
+                    reasons.push('⚠️ Higher-timeframe trend is flat — proceeding on lower-TF confluence only');
+                } else {
+                    reasons.push(`✅ Higher-timeframe trend (${htfTrend}) agrees with this ${action}`);
+                }
             }
 
             // News warning -- does NOT block the signal anymore. It only
@@ -3992,6 +4073,47 @@
 
         // toggleNewsFilter() removed -- the news filter toggle button was
         // replaced by the real Economic Calendar widget above.
+
+        // Records one real tick for the HTF tracker and prunes anything
+        // older than HTF_LOOKBACK_MS. Called once per engine tick.
+        function recordHTFPrice(price) {
+            const now = Date.now();
+            htfPriceLog.push({ t: now, p: price });
+            const cutoff = now - HTF_LOOKBACK_MS;
+            while (htfPriceLog.length > 0 && htfPriceLog[0].t < cutoff) htfPriceLog.shift();
+            try {
+                localStorage.setItem(HTF_LOG_KEY, JSON.stringify(htfPriceLog));
+            } catch (e) { /* storage full/unavailable -- not critical */ }
+        }
+
+        // Buckets the real tick log into HTF_BUCKET_MIN-minute candles
+        // (close price per bucket) and reads a simple higher-high/higher-low
+        // structure across the last few buckets -- the same idea as the
+        // main engine's swing-structure trend, just on a genuinely longer
+        // window built from real accumulated ticks. Returns 'bullish',
+        // 'bearish', 'neutral', or 'insufficient' (not enough real history
+        // yet -- honest about the cold-start instead of guessing).
+        function getHTFTrend() {
+            if (htfPriceLog.length === 0) return 'insufficient';
+            const bucketMs = HTF_BUCKET_MIN * 60000;
+            const buckets = new Map();
+            htfPriceLog.forEach(tick => {
+                const key = Math.floor(tick.t / bucketMs);
+                buckets.set(key, tick.p); // last tick in each bucket wins (close)
+            });
+            const closes = [...buckets.keys()].sort((a, b) => a - b).map(k => buckets.get(k));
+            if (closes.length < HTF_MIN_BUCKETS) return 'insufficient';
+
+            const recent = closes.slice(-HTF_MIN_BUCKETS);
+            const first = recent[0];
+            const last = recent[recent.length - 1];
+            const mid = recent[Math.floor(recent.length / 2)];
+            // Simple, honest read: consistently higher closes = bullish,
+            // consistently lower = bearish, mixed/flat = neutral.
+            if (last > first && last > mid) return 'bullish';
+            if (last < first && last < mid) return 'bearish';
+            return 'neutral';
+        }
 
         function updateSignalUI(signal) {
             if (!signal) return;
@@ -4446,6 +4568,33 @@
             }
         }
 
+        // Gold/XAUUSD is OTC, not a fixed-hours exchange, but broker
+        // liquidity drops to near-nothing over the weekend, which is
+        // exactly the thin-data noise that was causing confidence to
+        // swing wildly (7% -> 60%) with no real price movement. This
+        // approximates the standard broker week: closes Friday 21:00 UTC,
+        // reopens Sunday 22:00 UTC. Exact cutoff varies a bit by broker.
+        function isMarketClosed() {
+            const now = new Date();
+            const day = now.getUTCDay(); // 0=Sun ... 6=Sat
+            const hour = now.getUTCHours();
+            if (day === 6) return true; // all Saturday
+            if (day === 0 && hour < 22) return true; // Sunday before reopen
+            if (day === 5 && hour >= 21) return true; // Friday after close
+            return false;
+        }
+
+        function getMarketClosedSignal() {
+            return {
+                action: 'WAIT',
+                verdict: '🔒 MARKET CLOSED',
+                confidence: 0,
+                entry: 0, sl: 0, tp1: 0, tp2: 0, tp3: 0,
+                reasons: ['🔒 Market closed (weekend) — price feed may be stale/thin, no new signals until reopen'],
+                score: { bullish: 0, bearish: 0 }
+            };
+        }
+
         // ============================================================
         // MAIN ENGINE LOOP
         // ============================================================
@@ -4472,6 +4621,7 @@
                 currentPrice = price;
                 resolvePendingSignals(price);
                 liveTickCount++;
+                recordHTFPrice(price); // real tick logged for HTF trend (see above)
 
                 // Day boundary: start a fresh, REAL high/low/open the moment
                 // the calendar date changes (or on first run) -- no more fake
@@ -4539,8 +4689,10 @@
                 updateSMCUI(analysis);
                 updateSessionIndicator();
 
-                // Generate Signal
-                const signal = generateSignal(analysis);
+                // Generate Signal -- skipped while the market is closed
+                // (see isMarketClosed above) so thin/stale weekend data
+                // can't produce a misleading confidence swing.
+                const signal = isMarketClosed() ? getMarketClosedSignal() : generateSignal(analysis);
                 updateSignalUI(signal);
 
                 // Auto-share if enabled
