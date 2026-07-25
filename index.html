@@ -2847,7 +2847,55 @@
             { title: "Fair Value Gaps (FVG)", urdu: "FVG woh gaps hain jo price movement mein bante hain. AI inhe detect karta hai aur price wapas in gaps ko fill karne ki koshish karta hai.",
                 tip: "FVG fill hone par reversal ya continuation trade lein." },
             { title: "Liquidity Sweeps", urdu: "Jab price previous highs ya lows ko break karta hai, toh liquidity sweep hota hai. AI inhe detect karta hai aur reversal signals generate karta hai.",
-                tip: "Liquidity sweep ke baad reversal trade lein." }
+                tip: "Liquidity sweep ke baad reversal trade lein." },
+            { title: "Break of Structure (BOS)", urdu: "BOS tab hota hai jab price apne pichle swing high ya low ko break karke trend continuation confirm karta hai. Ye trend ke jaari rehne ka sabse pehla signal hai.",
+                tip: "BOS confirm hone ke baad hi trend direction mein entry sochein." },
+            { title: "Change of Character (CHoCH)", urdu: "CHoCH woh moment hai jab market apna structure badalta hai — jaise uptrend ke doran pehli baar lower low bante hi trend reverse hone ke asaar barh jate hain.",
+                tip: "CHoCH ko early reversal warning ki tarah lein, turant blind entry na lein." },
+            { title: "Premium & Discount Zones", urdu: "Har range ko 50% (equilibrium) se upar Premium aur neeche Discount zone mein baant sakte hain. Buy hamesha discount se aur sell premium se behtar hoti hai.",
+                tip: "Discount zone se buy aur premium zone se sell dhoondein." },
+            { title: "Supply & Demand Zones", urdu: "Supply zone woh area hai jahan se price gira tha (sellers active), Demand zone woh jahan se price utha tha (buyers active). Price wapas in zones par react karta hai.",
+                tip: "Fresh (untested) zones ki reliability tested zones se zyada hoti hai." },
+            { title: "Multi-Timeframe Analysis", urdu: "Higher timeframe (Daily/4H) se overall trend aur bias set karein, phir lower timeframe (15m/5m) par sahi entry dhoondein. Isse false signals kaafi kam ho jate hain.",
+                tip: "Kabhi bhi sirf ek hi timeframe par decision na lein." },
+            { title: "Risk to Reward Ratio", urdu: "Risk:Reward ratio batata hai ke aap kitna risk lekar kitna profit target kar rahe hain. Minimum 1:2 ratio rakhna chahiye taake losing trades ke bawajood overall profitable rahein.",
+                tip: "1:2 se kam R:R wali trades avoid karein." },
+            { title: "Position Sizing", urdu: "Position size aapke stop loss distance aur risk percentage se calculate hota hai, fixed lot size se nahi. Isse har trade mein risk hamesha consistent rehta hai.",
+                tip: "Lot size hamesha SL distance ke hisab se calculate karein, guess na karein." },
+            { title: "Pin Bar Candlestick", urdu: "Pin Bar ek chota body aur lambi wick wala candle hota hai jo rejection dikhata hai — market ne us price ko reject kar diya. Key levels par ye reversal ka strong sign hota hai.",
+                tip: "Pin bar ko support/resistance ya order block ke sath confirm karein." },
+            { title: "Engulfing Pattern", urdu: "Engulfing candle pichle candle ko pura cover kar leti hai aur momentum shift dikhati hai. Bullish engulfing niche se, bearish engulfing upar se reversal signal deta hai.",
+                tip: "Engulfing pattern ko key zone ke andar dhoondein, random jagah nahi." },
+            { title: "Fibonacci Retracement", urdu: "Fibonacci levels (38.2%, 50%, 61.8%) batate hain ke price pullback ke doran kahan tak wapas ja sakta hai before continuing trend ki taraf.",
+                tip: "61.8% - 79% zone ko 'Golden Zone' kaha jata hai, entries yahan strong hoti hain." },
+            { title: "Moving Averages", urdu: "Moving Average price ka average nikal kar trend ko smooth karta hai. Price MA ke upar ho to bullish bias, neeche ho to bearish bias hota hai.",
+                tip: "50 aur 200 MA ka crossover trend change ka acha indicator hai." },
+            { title: "RSI Indicator", urdu: "RSI (Relative Strength Index) batata hai market overbought (70+) ya oversold (30-) hai. Ye momentum aur possible reversal ka signal deta hai.",
+                tip: "RSI divergence (price aur RSI opposite direction) reversal ka strong sign hai." },
+            { title: "MACD Indicator", urdu: "MACD do moving averages ke farq se trend momentum measure karta hai. Signal line crossover se buy/sell signals milte hain.",
+                tip: "MACD ko price action ke sath confirm karein, akele use na karein." },
+            { title: "Trading Psychology", urdu: "Trading mein sabse bara dushman emotions hain — greed aur fear. Discipline se plan follow karna hi consistent profit ki asli chaabi hai.",
+                tip: "Har trade se pehle apna plan likhein aur usi par amal karein, feelings par nahi." },
+            { title: "Stop Loss Placement", urdu: "SL ko hamesha structure ke hisab se lagayein — jaise order block ya swing point ke thori door — random pips par nahi.",
+                tip: "SL ko itna tight na rakhein ke normal market noise mein hi hit ho jaye." },
+            { title: "Take Profit Strategy", urdu: "TP ko next liquidity level, opposite order block ya key resistance/support ke pass set karein. Partial profit book karna risk kam karta hai.",
+                tip: "Trade ka aadha profit book karke SL ko breakeven par move kar dein." },
+            { title: "Kill Zones (London/NY)", urdu: "London aur New York session ke overlap ke waqt sabse zyada volatility aur volume hota hai — inhe 'Kill Zones' kehte hain jahan best moves aate hain.",
+                tip: "Low volume Asian session mein bade trades avoid karein." },
+            { title: "Asian Range", urdu: "Asian session mein price aksar ek tight range mein consolidate karta hai. Ye range London session ke breakout ke liye base set karta hai.",
+                tip: "Asian range ka high/low mark karein, London breakout inhi par hota hai." },
+            { title: "Inducement", urdu: "Inducement ek chota trap move hota hai jo retail traders ko galat direction mein lure karta hai before asal move shuru hone se. Smart money isse liquidity grab karta hai.",
+                tip: "Obvious/easy setups par shak karein, wo inducement ho sakte hain." },
+            { title: "Mitigation Block", urdu: "Mitigation Block woh order block hota hai jahan price wapas jaakar apni purani losing position ko 'mitigate' (adjust) karta hai before trend continue karne se.",
+                tip: "Mitigation block ko fresh order block se differentiate karna seekhein." },
+            { title: "Equal Highs & Lows", urdu: "Equal Highs/Lows liquidity pools hote hain jahan bohot se traders ke stop losses jama hote hain. Price aksar inhe sweep karne jata hai.",
+                tip: "Equal highs/lows ke sweep ke baad reversal ka intezar karein." },
+            { title: "Imbalance (Inefficiency)", urdu: "Imbalance price mein wo area hota hai jahan buying ya selling itni tez thi ke fair trading nahi hui. Price aksar isse fill karne wapas aata hai.",
+                tip: "Imbalance fill hote hi trend continuation ka mauka dekhein." },
+            { title: "Judas Swing", urdu: "Judas Swing session ke shuru mein hone wala fake move hota hai jo traders ko galat side trap karta hai, phir price asal direction mein reverse hota hai.",
+                tip: "Session open ke pehle move par bharosa na karein, confirmation ka wait karein." },
+            { title: "Optimal Trade Entry (OTE)", urdu: "OTE Fibonacci ke 62%-79% retracement zone ko kehte hain jahan best risk:reward ke sath entry milti hai jab trend continuation expect ho.",
+                tip: "OTE zone mein entry ke sath tight SL structure ke just neeche/upar rakhein." }
         ];
 
         const TRADING_RULES = [
@@ -4470,7 +4518,20 @@
             const container = document.getElementById('lessonList');
             if (!container) return;
             container.innerHTML = '';
-            TRADING_LESSONS.forEach(lesson => {
+            // Pick today's set of 4 lessons from the pool using the actual
+            // calendar date — same lessons for everyone on a given day,
+            // automatically rotating to a fresh set the next day, cycling
+            // through the whole pool before repeating.
+            const now = new Date();
+            const startOfYear = new Date(now.getFullYear(), 0, 0);
+            const dayOfYear = Math.floor((now - startOfYear) / 86400000);
+            const poolSize = TRADING_LESSONS.length;
+            const startPos = (dayOfYear * 4) % poolSize;
+            const todaysLessons = [];
+            for (let i = 0; i < 4; i++) {
+                todaysLessons.push(TRADING_LESSONS[(startPos + i) % poolSize]);
+            }
+            todaysLessons.forEach(lesson => {
                 const shareMsg = '📚 ' + lesson.title + '\n\n' + lesson.urdu + '\n\n💡 Tip: ' + lesson.tip;
                 const item = document.createElement('div');
                 item.className = 'lesson-item';
