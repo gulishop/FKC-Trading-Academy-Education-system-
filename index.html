@@ -4332,7 +4332,7 @@
                     return;
                 }
 
-                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                const registration = await navigator.serviceWorker.register('firebase-messaging-sw.js');
                 const token = await messaging.getToken({
                     vapidKey: FIREBASE_VAPID_KEY,
                     serviceWorkerRegistration: registration
