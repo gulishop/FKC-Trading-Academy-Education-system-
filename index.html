@@ -2327,6 +2327,11 @@
         ]
     }
     </script>
+    <!-- Firebase SDK -- for background push notifications only. Loaded
+         but does nothing until enableBackgroundPush() runs with a real
+         Firebase project config filled in (see setup guide). -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 </head>
 <body>
 
@@ -2558,10 +2563,21 @@
 
             <!-- Signal Alarm controls -- inline (not fixed/floating) so it
                  never overlaps other buttons at the bottom of the page. -->
-            <div style="display:flex;align-items:center;justify-content:flex-end;margin:6px 0;">
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:6px 0;flex-wrap:wrap;">
                 <button id="enableAlertsBtn" onclick="enableSignalAlerts()"
                     style="background:var(--bg-card-alt);color:var(--text-main);border:1px solid var(--border);
-                    border-radius:20px;padding:6px 12px;font-size:10px;">🔕 Enable Alerts</button>
+                    border-radius:20px;padding:6px 12px;font-size:10px;">🔕 Enable Alerts (tab open)</button>
+                <button id="enableBgPushBtn" onclick="enableBackgroundPush()"
+                    style="background:var(--bg-card-alt);color:var(--text-main);border:1px solid var(--border);
+                    border-radius:20px;padding:6px 12px;font-size:10px;">🌐 Enable Background Push</button>
+            </div>
+            <div id="bgPushSetup" style="display:none;background:var(--bg-card-alt);border:1px solid var(--border);
+                 border-radius:10px;padding:10px;margin-bottom:8px;font-size:10px;color:var(--text-sub);">
+                <div style="margin-bottom:6px;">📋 One-time setup: copy this token, add it as a GitHub secret named <strong>FCM_TOKENS</strong> in your repo (Settings → Secrets and variables → Actions). See the setup guide for full steps.</div>
+                <textarea id="fcmTokenBox" readonly rows="3" style="width:100%;background:var(--bg-deep);color:var(--text-main);
+                    border:1px solid var(--border);border-radius:6px;padding:6px;font-size:9px;"></textarea>
+                <button onclick="navigator.clipboard.writeText(document.getElementById('fcmTokenBox').value); showNotification('✅ Copied!', 'FCM token copied')"
+                    style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;font-weight:700;font-size:10px;">Copy Token</button>
             </div>
             <div id="alarmBanner" style="display:none;align-items:center;justify-content:space-between;gap:10px;
                  background:var(--gold);color:#000;border-radius:10px;padding:10px 12px;margin-bottom:8px;">
@@ -4274,6 +4290,62 @@
                 alarmIntervalId = null;
             }
             document.getElementById('alarmBanner').style.display = 'none';
+        }
+
+        // ============================================================
+        // BACKGROUND PUSH (works even with Chrome fully closed) --
+        // ⚠️ REPLACE firebaseConfig below with your own project's config
+        // (from the Firebase console) before this will actually work.
+        // Until then this fails gracefully with a clear message instead
+        // of pretending to succeed.
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCuOHTmziW-GdCTD1cB8aGpBjlNCQNtAgY",
+            authDomain: "fkc-trading-alerts.firebaseapp.com",
+            projectId: "fkc-trading-alerts",
+            storageBucket: "fkc-trading-alerts.firebasestorage.app",
+            messagingSenderId: "74755956797",
+            appId: "1:74755956797:web:77a6619f25de3a30804a54"
+        };
+        // ⚠️ REPLACE with your own VAPID key (Firebase console -> Project
+        // Settings -> Cloud Messaging -> Web Push certificates).
+        const FIREBASE_VAPID_KEY = "BNcber_7awJR9gY77yvfUU_pGFjGPEkYR-WCyJ-oC6rBkMwKuPnsl677NCOH75TBXrOc3rpt3PHlrnfEY6rxgrg";
+
+        async function enableBackgroundPush() {
+            const setupBox = document.getElementById('bgPushSetup');
+            const tokenBox = document.getElementById('fcmTokenBox');
+
+            if (firebaseConfig.apiKey === "REPLACE_ME" || FIREBASE_VAPID_KEY === "REPLACE_ME") {
+                setupBox.style.display = 'block';
+                tokenBox.value = '⚠️ Firebase not configured yet. Follow the setup guide to create a free Firebase project and paste your config into firebaseConfig (index.html) and firebase-messaging-sw.js.';
+                return;
+            }
+
+            try {
+                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                const messaging = firebase.messaging();
+
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    setupBox.style.display = 'block';
+                    tokenBox.value = 'Notification permission was not granted -- background push cannot work without it.';
+                    return;
+                }
+
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                const token = await messaging.getToken({
+                    vapidKey: FIREBASE_VAPID_KEY,
+                    serviceWorkerRegistration: registration
+                });
+
+                setupBox.style.display = 'block';
+                tokenBox.value = token;
+                document.getElementById('enableBgPushBtn').textContent = '🌐 Push Enabled';
+                document.getElementById('enableBgPushBtn').style.color = 'var(--green)';
+            } catch (e) {
+                setupBox.style.display = 'block';
+                tokenBox.value = 'Setup error: ' + e.message + ' -- check firebaseConfig / VAPID key / that firebase-messaging-sw.js is at your site root.';
+            }
         }
 
         // Called from updateSignalUI with the current signal -- only
