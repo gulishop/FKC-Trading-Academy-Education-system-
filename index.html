@@ -4247,6 +4247,7 @@
             const btn = document.getElementById('enableAlertsBtn');
             btn.textContent = '🔔 Alerts On';
             btn.style.color = 'var(--green)';
+            try { localStorage.setItem('alertsEnabled', '1'); } catch (e) { /* storage unavailable -- not critical */ }
             // A short confirmation beep so the user knows sound works.
             playBeep();
         }
@@ -5318,11 +5319,34 @@
             loadSignalHistory();
             updateHistoryUI();
 
-            // If background push was already enabled on this device in an
-            // earlier visit, show the button as already enabled (green)
-            // right away, instead of reverting to "Enable Background Push"
-            // and forcing the user to re-click and see the token box again
-            // on every refresh.
+            // If signal alerts were already enabled on this device in an
+            // earlier visit, show the button as already on (green) right
+            // away, instead of reverting to "Enable Alerts" on every
+            // refresh.
+            try {
+                if (localStorage.getItem('alertsEnabled') === '1') {
+                    alertsEnabled = true;
+                    const alertsBtn = document.getElementById('enableAlertsBtn');
+                    alertsBtn.textContent = '🔔 Alerts On';
+                    alertsBtn.style.color = 'var(--green)';
+                }
+            } catch (e) { /* storage unavailable -- not critical */ }
+
+            // Browsers only allow audio to start after a real user
+            // interaction with the page. Since alerts may now be "on"
+            // from a previous visit (restored above) without a fresh tap
+            // on the Alerts button itself, unlock/resume the AudioContext
+            // on the very first tap anywhere on the page, so alarm sounds
+            // still work without the user having to re-press the button.
+            document.addEventListener('pointerdown', function unlockAudioOnce() {
+                if (!audioCtx) {
+                    try {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    } catch (e) { /* Web Audio unsupported */ }
+                }
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                document.removeEventListener('pointerdown', unlockAudioOnce);
+            }, { once: true });
             try {
                 if (localStorage.getItem('bgPushEnabled') === '1') {
                     const btn = document.getElementById('enableBgPushBtn');
