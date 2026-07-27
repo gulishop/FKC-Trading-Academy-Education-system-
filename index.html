@@ -2348,22 +2348,6 @@
     </div>
 
     <!-- ============================
-    SIGNAL ALARM (repeats until manually stopped)
-    ============================ -->
-    <div id="alarmBanner" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;
-         background:var(--gold);color:#000;border-radius:12px;padding:12px 14px;
-         box-shadow:0 6px 20px rgba(0,0,0,0.4);align-items:center;justify-content:space-between;gap:10px;">
-        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;">
-            🔔 <span id="alarmBannerText">New Signal!</span>
-        </div>
-        <button onclick="stopSignalAlarm()" style="background:#000;color:var(--gold);border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;">Stop</button>
-    </div>
-
-    <button id="enableAlertsBtn" onclick="enableSignalAlerts()"
-        style="position:fixed;right:12px;bottom:12px;z-index:9998;background:var(--bg-card-alt);color:var(--text-main);
-        border:1px solid var(--border);border-radius:20px;padding:8px 12px;font-size:11px;">🔕 Enable Alerts</button>
-
-    <!-- ============================
     BREAK ALERT (New Daily High/Low)
     ============================ -->
     <div class="break-alert" id="breakAlert">
@@ -2570,6 +2554,21 @@
 
             <div class="conf-bar-wrap">
                 <div class="conf-bar-fill medium" id="aiConfidenceBar" style="width:50%"></div>
+            </div>
+
+            <!-- Signal Alarm controls -- inline (not fixed/floating) so it
+                 never overlaps other buttons at the bottom of the page. -->
+            <div style="display:flex;align-items:center;justify-content:flex-end;margin:6px 0;">
+                <button id="enableAlertsBtn" onclick="enableSignalAlerts()"
+                    style="background:var(--bg-card-alt);color:var(--text-main);border:1px solid var(--border);
+                    border-radius:20px;padding:6px 12px;font-size:10px;">🔕 Enable Alerts</button>
+            </div>
+            <div id="alarmBanner" style="display:none;align-items:center;justify-content:space-between;gap:10px;
+                 background:var(--gold);color:#000;border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:12px;">
+                    🔔 <span id="alarmBannerText">New Signal!</span>
+                </div>
+                <button onclick="stopSignalAlarm()" style="background:#000;color:var(--gold);border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:11px;">Stop</button>
             </div>
 
             <!-- Bullish vs Bearish Score -->
@@ -2921,6 +2920,37 @@
         let signalHistory = [];
         let winCount = 0;
         let lossCount = 0;
+        // Signal History / Win Rate persistence -- without this it lived
+        // only in a JS variable and reset to empty on every page refresh.
+        // Now it's saved to this browser's localStorage so it survives
+        // reloads (still per-device/per-browser, not shared across users
+        // or synced anywhere -- there's no server behind this page).
+        const SIGNAL_HISTORY_KEY = 'fkc_signal_history_v1';
+
+        function loadSignalHistory() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(SIGNAL_HISTORY_KEY));
+                if (saved && Array.isArray(saved.history)) {
+                    signalHistory = saved.history;
+                    winCount = saved.winCount || 0;
+                    lossCount = saved.lossCount || 0;
+                }
+            } catch (e) {
+                console.log('Signal history load error:', e);
+            }
+        }
+
+        function saveSignalHistory() {
+            try {
+                localStorage.setItem(SIGNAL_HISTORY_KEY, JSON.stringify({
+                    history: signalHistory,
+                    winCount: winCount,
+                    lossCount: lossCount
+                }));
+            } catch (e) {
+                console.log('Signal history save error:', e);
+            }
+        }
         let activeTrade = false;
 
         // Session VWAP -- cumulative price*weight / weight since the start
@@ -4118,6 +4148,9 @@
             return active || null;
         }
 
+        // toggleNewsFilter() removed -- the news filter toggle button was
+        // replaced by the real Economic Calendar widget above.
+
         // Lot Size Calculator -- real math from user-entered account
         // balance + risk %, and the actual entry/SL distance of the
         // current signal. Assumes a standard XAUUSD CFD contract (100 oz,
@@ -4168,8 +4201,93 @@
             lotSizeEl.textContent = lots >= 0.01 ? `${lots.toFixed(2)} lots` : '< 0.01 lots (risk too small)';
         }
 
-        // toggleNewsFilter() removed -- the news filter toggle button was
-        // replaced by the real Economic Calendar widget above.
+        // ============================================================
+        // SIGNAL ALARM -- real repeating beep + system Notification when
+        // a NEW actionable BUY/SELL signal appears. Keeps beeping every
+        // 1.3s until the user taps Stop. Works reliably while Chrome is
+        // minimized but still running; it CANNOT survive Chrome being
+        // fully force-closed/swiped away -- that needs a server + push
+        // notifications, which this static site doesn't have.
+        // ============================================================
+        let alertsEnabled = false;
+        let audioCtx = null;
+        let alarmIntervalId = null;
+        let lastAlertedSignalKey = null;
+
+        function enableSignalAlerts() {
+            // AudioContext must be created/resumed from a real user
+            // gesture (this button tap) or browsers block sound later.
+            if (!audioCtx) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) { /* Web Audio unsupported */ }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+            alertsEnabled = true;
+            const btn = document.getElementById('enableAlertsBtn');
+            btn.textContent = '🔔 Alerts On';
+            btn.style.color = 'var(--green)';
+            // A short confirmation beep so the user knows sound works.
+            playBeep();
+        }
+
+        function playBeep() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.4);
+        }
+
+        function startSignalAlarm(signal) {
+            document.getElementById('alarmBannerText').textContent =
+                `${signal.verdict} @ ${signal.entry.toFixed(2)}`;
+            document.getElementById('alarmBanner').style.display = 'flex';
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    new Notification('🏛️ FKC Trading — New Signal', {
+                        body: `${signal.verdict} XAUUSD @ ${signal.entry.toFixed(2)} | Confidence ${signal.confidence}%`,
+                        tag: 'fkc-signal'
+                    });
+                } catch (e) { /* notification failed -- beep still plays */ }
+            }
+
+            if (alarmIntervalId) clearInterval(alarmIntervalId);
+            playBeep();
+            alarmIntervalId = setInterval(playBeep, 1300);
+        }
+
+        function stopSignalAlarm() {
+            if (alarmIntervalId) {
+                clearInterval(alarmIntervalId);
+                alarmIntervalId = null;
+            }
+            document.getElementById('alarmBanner').style.display = 'none';
+        }
+
+        // Called from updateSignalUI with the current signal -- only
+        // triggers on a genuinely NEW actionable signal (not every 5s
+        // re-render of the same still-active one).
+        function checkSignalAlarm(signal) {
+            if (!alertsEnabled) return;
+            if (signal.action !== 'BUY' && signal.action !== 'SELL') return;
+            if (signal.confidence <= 60) return;
+            const key = `${signal.action}-${signal.entry.toFixed(2)}`;
+            if (key === lastAlertedSignalKey) return;
+            lastAlertedSignalKey = key;
+            startSignalAlarm(signal);
+        }
 
         // Records one real tick for the HTF tracker and prunes anything
         // older than HTF_LOOKBACK_MS. Called once per engine tick.
@@ -4357,6 +4475,7 @@
                 });
                 if (signalHistory.length > 20) signalHistory.pop();
 
+                saveSignalHistory();
                 updateHistoryUI();
             }
         }
@@ -4376,7 +4495,10 @@
                     else if (price >= item.sl) { item.result = 'LOSS'; lossCount++; changed = true; }
                 }
             });
-            if (changed) updateHistoryUI();
+            if (changed) {
+                saveSignalHistory();
+                updateHistoryUI();
+            }
         }
 
         function updateHistoryUI() {
@@ -4697,94 +4819,6 @@
                 reasons: ['🔒 Market closed (weekend) — price feed may be stale/thin, no new signals until reopen'],
                 score: { bullish: 0, bearish: 0 }
             };
-        }
-
-        // ============================================================
-        // SIGNAL ALARM -- real repeating beep + system Notification when
-        // a NEW actionable BUY/SELL signal appears. Keeps beeping every
-        // 1.3s until the user taps Stop. Works reliably while Chrome is
-        // minimized but still running; it CANNOT survive Chrome being
-        // fully force-closed/swiped away -- that needs a server + push
-        // notifications, which this static site doesn't have.
-        // ============================================================
-        let alertsEnabled = false;
-        let audioCtx = null;
-        let alarmIntervalId = null;
-        let lastAlertedSignalKey = null;
-
-        function enableSignalAlerts() {
-            // AudioContext must be created/resumed from a real user
-            // gesture (this button tap) or browsers block sound later.
-            if (!audioCtx) {
-                try {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                } catch (e) { /* Web Audio unsupported */ }
-            }
-            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-
-            if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission();
-            }
-            alertsEnabled = true;
-            const btn = document.getElementById('enableAlertsBtn');
-            btn.textContent = '🔔 Alerts On';
-            btn.style.color = 'var(--green)';
-            // A short confirmation beep so the user knows sound works.
-            playBeep();
-        }
-
-        function playBeep() {
-            if (!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = 880;
-            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.4);
-        }
-
-        function startSignalAlarm(signal) {
-            document.getElementById('alarmBannerText').textContent =
-                `${signal.verdict} @ ${signal.entry.toFixed(2)}`;
-            document.getElementById('alarmBanner').style.display = 'flex';
-
-            if ('Notification' in window && Notification.permission === 'granted') {
-                try {
-                    new Notification('🏛️ FKC Trading — New Signal', {
-                        body: `${signal.verdict} XAUUSD @ ${signal.entry.toFixed(2)} | Confidence ${signal.confidence}%`,
-                        tag: 'fkc-signal'
-                    });
-                } catch (e) { /* notification failed -- beep still plays */ }
-            }
-
-            if (alarmIntervalId) clearInterval(alarmIntervalId);
-            playBeep();
-            alarmIntervalId = setInterval(playBeep, 1300);
-        }
-
-        function stopSignalAlarm() {
-            if (alarmIntervalId) {
-                clearInterval(alarmIntervalId);
-                alarmIntervalId = null;
-            }
-            document.getElementById('alarmBanner').style.display = 'none';
-        }
-
-        // Called from updateSignalUI with the current signal -- only
-        // triggers on a genuinely NEW actionable signal (not every 5s
-        // re-render of the same still-active one).
-        function checkSignalAlarm(signal) {
-            if (!alertsEnabled) return;
-            if (signal.action !== 'BUY' && signal.action !== 'SELL') return;
-            if (signal.confidence <= 60) return;
-            const key = `${signal.action}-${signal.entry.toFixed(2)}`;
-            if (key === lastAlertedSignalKey) return;
-            lastAlertedSignalKey = key;
-            startSignalAlarm(signal);
         }
 
         // ============================================================
@@ -5192,6 +5226,12 @@
                 document.getElementById('loadingOverlay').classList.add('hidden');
             }, 1500);
 
+            // Restore Signal History / Win Rate saved from previous visits
+            // on this device, instead of starting back at "0 trades" every
+            // time the page loads.
+            loadSignalHistory();
+            updateHistoryUI();
+
             // No fake seed values -- the UI stays at "--" until the first
             // real price tick arrives from gold-api.com via runEngine().
             // If the feed drops, the last real price stays on screen
@@ -5206,15 +5246,11 @@
             updateLotSizeCalc(null, null);
             document.getElementById('accountBalanceInput').addEventListener('input', () => {
                 saveLotCalcInputs();
-                updateLotSizeCalc(
-                    lastSignalEntry, lastSignalSL
-                );
+                updateLotSizeCalc(lastSignalEntry, lastSignalSL);
             });
             document.getElementById('riskPercentInput').addEventListener('input', () => {
                 saveLotCalcInputs();
-                updateLotSizeCalc(
-                    lastSignalEntry, lastSignalSL
-                );
+                updateLotSizeCalc(lastSignalEntry, lastSignalSL);
             });
 
             // Daily updates
