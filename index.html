@@ -2874,6 +2874,37 @@
         let signalHistory = [];
         let winCount = 0;
         let lossCount = 0;
+        // Signal History / Win Rate persistence -- without this it lived
+        // only in a JS variable and reset to empty on every page refresh.
+        // Now it's saved to this browser's localStorage so it survives
+        // reloads (still per-device/per-browser, not shared across users
+        // or synced anywhere -- there's no server behind this page).
+        const SIGNAL_HISTORY_KEY = 'fkc_signal_history_v1';
+
+        function loadSignalHistory() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(SIGNAL_HISTORY_KEY));
+                if (saved && Array.isArray(saved.history)) {
+                    signalHistory = saved.history;
+                    winCount = saved.winCount || 0;
+                    lossCount = saved.lossCount || 0;
+                }
+            } catch (e) {
+                console.log('Signal history load error:', e);
+            }
+        }
+
+        function saveSignalHistory() {
+            try {
+                localStorage.setItem(SIGNAL_HISTORY_KEY, JSON.stringify({
+                    history: signalHistory,
+                    winCount: winCount,
+                    lossCount: lossCount
+                }));
+            } catch (e) {
+                console.log('Signal history save error:', e);
+            }
+        }
         let activeTrade = false;
 
         // Session VWAP -- cumulative price*weight / weight since the start
@@ -4253,6 +4284,7 @@
                 });
                 if (signalHistory.length > 20) signalHistory.pop();
 
+                saveSignalHistory();
                 updateHistoryUI();
             }
         }
@@ -4272,7 +4304,10 @@
                     else if (price >= item.sl) { item.result = 'LOSS'; lossCount++; changed = true; }
                 }
             });
-            if (changed) updateHistoryUI();
+            if (changed) {
+                saveSignalHistory();
+                updateHistoryUI();
+            }
         }
 
         function updateHistoryUI() {
@@ -4999,6 +5034,12 @@
             setTimeout(() => {
                 document.getElementById('loadingOverlay').classList.add('hidden');
             }, 1500);
+
+            // Restore Signal History / Win Rate saved from previous visits
+            // on this device, instead of starting back at "0 trades" every
+            // time the page loads.
+            loadSignalHistory();
+            updateHistoryUI();
 
             // No fake seed values -- the UI stays at "--" until the first
             // real price tick arrives from gold-api.com via runEngine().
