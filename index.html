@@ -2348,6 +2348,22 @@
     </div>
 
     <!-- ============================
+    SIGNAL ALARM (repeats until manually stopped)
+    ============================ -->
+    <div id="alarmBanner" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;
+         background:var(--gold);color:#000;border-radius:12px;padding:12px 14px;
+         box-shadow:0 6px 20px rgba(0,0,0,0.4);align-items:center;justify-content:space-between;gap:10px;">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;">
+            🔔 <span id="alarmBannerText">New Signal!</span>
+        </div>
+        <button onclick="stopSignalAlarm()" style="background:#000;color:var(--gold);border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;">Stop</button>
+    </div>
+
+    <button id="enableAlertsBtn" onclick="enableSignalAlerts()"
+        style="position:fixed;right:12px;bottom:12px;z-index:9998;background:var(--bg-card-alt);color:var(--text-main);
+        border:1px solid var(--border);border-radius:20px;padding:8px 12px;font-size:11px;">🔕 Enable Alerts</button>
+
+    <!-- ============================
     BREAK ALERT (New Daily High/Low)
     ============================ -->
     <div class="break-alert" id="breakAlert">
@@ -2572,6 +2588,32 @@
                 <div class="lvl-box"><div class="lvl-lbl">TP1 (1:2)</div><div class="lvl-val tp1" id="lvlTP1">--</div></div>
                 <div class="lvl-box"><div class="lvl-lbl">TP2 (1:3)</div><div class="lvl-val tp2" id="lvlTP2">--</div></div>
                 <div class="lvl-box"><div class="lvl-lbl">TP3 (1:4)</div><div class="lvl-val tp3" id="lvlTP3">--</div></div>
+            </div>
+
+            <!-- Lot Size Calculator -->
+            <div class="lot-calc" style="margin-top:10px;padding:10px;background:var(--bg-card-alt);border:1px solid var(--border);border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-sub);margin-bottom:8px;">🧮 <strong style="color:var(--text-main);">Lot Size Calculator</strong></div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <div style="flex:1;">
+                        <label style="font-size:9px;color:var(--text-sub);display:block;margin-bottom:3px;">Account Balance ($)</label>
+                        <input type="number" id="accountBalanceInput" value="1000" min="0" step="10"
+                            style="width:100%;background:var(--bg-deep);border:1px solid var(--border);color:var(--text-main);border-radius:6px;padding:6px 8px;font-size:12px;">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:9px;color:var(--text-sub);display:block;margin-bottom:3px;">Risk %</label>
+                        <input type="number" id="riskPercentInput" value="1" min="0.1" max="100" step="0.1"
+                            style="width:100%;background:var(--bg-deep);border:1px solid var(--border);color:var(--text-main);border-radius:6px;padding:6px 8px;font-size:12px;">
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;">
+                    <span style="color:var(--text-sub);">Risk Amount</span>
+                    <span id="lotCalcRiskAmount" style="color:var(--text-main);font-weight:600;">--</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:4px;">
+                    <span style="color:var(--text-sub);">Suggested Lot Size</span>
+                    <span id="lotCalcLotSize" style="color:var(--gold);font-weight:700;">--</span>
+                </div>
+                <div style="font-size:8px;color:var(--text-sub);margin-top:6px;">⚠️ Estimate assumes standard XAUUSD contract (100 oz/lot, $1 move = $100/lot). Confirm against your broker's actual contract specs before sizing.</div>
             </div>
 
             <!-- Signal Validity -->
@@ -2857,6 +2899,11 @@
         // STATE
         // ============================================================
         let currentPrice = 0;
+        // Last real signal's entry/SL (or null on WAIT) -- kept so the lot
+        // calculator can recompute immediately when the user edits balance
+        // or risk% without waiting for the next engine tick.
+        let lastSignalEntry = null;
+        let lastSignalSL = null;
         let currentBid = 0;
         let currentAsk = 0;
         let dailyLow = null;
@@ -2874,37 +2921,6 @@
         let signalHistory = [];
         let winCount = 0;
         let lossCount = 0;
-        // Signal History / Win Rate persistence -- without this it lived
-        // only in a JS variable and reset to empty on every page refresh.
-        // Now it's saved to this browser's localStorage so it survives
-        // reloads (still per-device/per-browser, not shared across users
-        // or synced anywhere -- there's no server behind this page).
-        const SIGNAL_HISTORY_KEY = 'fkc_signal_history_v1';
-
-        function loadSignalHistory() {
-            try {
-                const saved = JSON.parse(localStorage.getItem(SIGNAL_HISTORY_KEY));
-                if (saved && Array.isArray(saved.history)) {
-                    signalHistory = saved.history;
-                    winCount = saved.winCount || 0;
-                    lossCount = saved.lossCount || 0;
-                }
-            } catch (e) {
-                console.log('Signal history load error:', e);
-            }
-        }
-
-        function saveSignalHistory() {
-            try {
-                localStorage.setItem(SIGNAL_HISTORY_KEY, JSON.stringify({
-                    history: signalHistory,
-                    winCount: winCount,
-                    lossCount: lossCount
-                }));
-            } catch (e) {
-                console.log('Signal history save error:', e);
-            }
-        }
         let activeTrade = false;
 
         // Session VWAP -- cumulative price*weight / weight since the start
@@ -4102,6 +4118,56 @@
             return active || null;
         }
 
+        // Lot Size Calculator -- real math from user-entered account
+        // balance + risk %, and the actual entry/SL distance of the
+        // current signal. Assumes a standard XAUUSD CFD contract (100 oz,
+        // $1 price move = $100 P/L per standard lot) since that's the
+        // common retail convention -- flagged in the UI as an estimate
+        // because exact contract size varies by broker.
+        const LOT_CALC_KEY = 'fkc_lot_calc_inputs';
+        const XAUUSD_USD_PER_POINT_PER_LOT = 100;
+
+        function loadLotCalcInputs() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(LOT_CALC_KEY) || '{}');
+                if (saved.balance != null) document.getElementById('accountBalanceInput').value = saved.balance;
+                if (saved.risk != null) document.getElementById('riskPercentInput').value = saved.risk;
+            } catch (e) { /* ignore malformed saved input */ }
+        }
+
+        function saveLotCalcInputs() {
+            try {
+                localStorage.setItem(LOT_CALC_KEY, JSON.stringify({
+                    balance: document.getElementById('accountBalanceInput').value,
+                    risk: document.getElementById('riskPercentInput').value
+                }));
+            } catch (e) { /* storage unavailable -- not critical */ }
+        }
+
+        // entry/sl are the real current signal levels, or null when there's
+        // no active BUY/SELL (WAIT state) -- shows '--' rather than a
+        // leftover number from the last real signal.
+        function updateLotSizeCalc(entry, sl) {
+            const riskAmountEl = document.getElementById('lotCalcRiskAmount');
+            const lotSizeEl = document.getElementById('lotCalcLotSize');
+            const balance = parseFloat(document.getElementById('accountBalanceInput').value) || 0;
+            const riskPct = parseFloat(document.getElementById('riskPercentInput').value) || 0;
+            const riskAmount = balance * (riskPct / 100);
+            riskAmountEl.textContent = balance > 0 ? `$${riskAmount.toFixed(2)}` : '--';
+
+            if (entry == null || sl == null || riskAmount <= 0) {
+                lotSizeEl.textContent = '--';
+                return;
+            }
+            const slDistance = Math.abs(entry - sl);
+            if (slDistance <= 0) {
+                lotSizeEl.textContent = '--';
+                return;
+            }
+            const lots = riskAmount / (slDistance * XAUUSD_USD_PER_POINT_PER_LOT);
+            lotSizeEl.textContent = lots >= 0.01 ? `${lots.toFixed(2)} lots` : '< 0.01 lots (risk too small)';
+        }
+
         // toggleNewsFilter() removed -- the news filter toggle button was
         // replaced by the real Economic Calendar widget above.
 
@@ -4148,6 +4214,7 @@
 
         function updateSignalUI(signal) {
             if (!signal) return;
+            checkSignalAlarm(signal);
 
             const card = document.getElementById('signalCard');
             const sigAction = document.getElementById('sigAction');
@@ -4248,11 +4315,17 @@
                 validity.innerHTML =
                     `✅ Signal Valid | R:R <span class="rr">1:${rr1} • 1:${rr2} • 1:${rr3}</span> | Confidence ${confidence}%`;
                 validity.style.color = 'var(--text-sub)';
+                lastSignalEntry = signal.entry;
+                lastSignalSL = signal.sl;
+                updateLotSizeCalc(signal.entry, signal.sl);
             } else {
                 tradeLevels.classList.add('hidden');
                 document.querySelectorAll('.lvl-box').forEach(box => box.classList.add('na'));
                 validity.innerHTML = `⏳ Waiting for confirmation... ${confidence > 0 ? `Confidence: ${confidence}%` : ''}`;
                 validity.style.color = 'var(--gold)';
+                lastSignalEntry = null;
+                lastSignalSL = null;
+                updateLotSizeCalc(null, null);
             }
 
             // Checklist
@@ -4284,7 +4357,6 @@
                 });
                 if (signalHistory.length > 20) signalHistory.pop();
 
-                saveSignalHistory();
                 updateHistoryUI();
             }
         }
@@ -4304,10 +4376,7 @@
                     else if (price >= item.sl) { item.result = 'LOSS'; lossCount++; changed = true; }
                 }
             });
-            if (changed) {
-                saveSignalHistory();
-                updateHistoryUI();
-            }
+            if (changed) updateHistoryUI();
         }
 
         function updateHistoryUI() {
@@ -4628,6 +4697,94 @@
                 reasons: ['🔒 Market closed (weekend) — price feed may be stale/thin, no new signals until reopen'],
                 score: { bullish: 0, bearish: 0 }
             };
+        }
+
+        // ============================================================
+        // SIGNAL ALARM -- real repeating beep + system Notification when
+        // a NEW actionable BUY/SELL signal appears. Keeps beeping every
+        // 1.3s until the user taps Stop. Works reliably while Chrome is
+        // minimized but still running; it CANNOT survive Chrome being
+        // fully force-closed/swiped away -- that needs a server + push
+        // notifications, which this static site doesn't have.
+        // ============================================================
+        let alertsEnabled = false;
+        let audioCtx = null;
+        let alarmIntervalId = null;
+        let lastAlertedSignalKey = null;
+
+        function enableSignalAlerts() {
+            // AudioContext must be created/resumed from a real user
+            // gesture (this button tap) or browsers block sound later.
+            if (!audioCtx) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) { /* Web Audio unsupported */ }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+            alertsEnabled = true;
+            const btn = document.getElementById('enableAlertsBtn');
+            btn.textContent = '🔔 Alerts On';
+            btn.style.color = 'var(--green)';
+            // A short confirmation beep so the user knows sound works.
+            playBeep();
+        }
+
+        function playBeep() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.4);
+        }
+
+        function startSignalAlarm(signal) {
+            document.getElementById('alarmBannerText').textContent =
+                `${signal.verdict} @ ${signal.entry.toFixed(2)}`;
+            document.getElementById('alarmBanner').style.display = 'flex';
+
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    new Notification('🏛️ FKC Trading — New Signal', {
+                        body: `${signal.verdict} XAUUSD @ ${signal.entry.toFixed(2)} | Confidence ${signal.confidence}%`,
+                        tag: 'fkc-signal'
+                    });
+                } catch (e) { /* notification failed -- beep still plays */ }
+            }
+
+            if (alarmIntervalId) clearInterval(alarmIntervalId);
+            playBeep();
+            alarmIntervalId = setInterval(playBeep, 1300);
+        }
+
+        function stopSignalAlarm() {
+            if (alarmIntervalId) {
+                clearInterval(alarmIntervalId);
+                alarmIntervalId = null;
+            }
+            document.getElementById('alarmBanner').style.display = 'none';
+        }
+
+        // Called from updateSignalUI with the current signal -- only
+        // triggers on a genuinely NEW actionable signal (not every 5s
+        // re-render of the same still-active one).
+        function checkSignalAlarm(signal) {
+            if (!alertsEnabled) return;
+            if (signal.action !== 'BUY' && signal.action !== 'SELL') return;
+            if (signal.confidence <= 60) return;
+            const key = `${signal.action}-${signal.entry.toFixed(2)}`;
+            if (key === lastAlertedSignalKey) return;
+            lastAlertedSignalKey = key;
+            startSignalAlarm(signal);
         }
 
         // ============================================================
@@ -5035,12 +5192,6 @@
                 document.getElementById('loadingOverlay').classList.add('hidden');
             }, 1500);
 
-            // Restore Signal History / Win Rate saved from previous visits
-            // on this device, instead of starting back at "0 trades" every
-            // time the page loads.
-            loadSignalHistory();
-            updateHistoryUI();
-
             // No fake seed values -- the UI stays at "--" until the first
             // real price tick arrives from gold-api.com via runEngine().
             // If the feed drops, the last real price stays on screen
@@ -5048,6 +5199,23 @@
 
             // Load chart
             loadChart();
+
+            // Lot Size Calculator -- restore saved balance/risk% and
+            // recalculate whenever the user edits either field.
+            loadLotCalcInputs();
+            updateLotSizeCalc(null, null);
+            document.getElementById('accountBalanceInput').addEventListener('input', () => {
+                saveLotCalcInputs();
+                updateLotSizeCalc(
+                    lastSignalEntry, lastSignalSL
+                );
+            });
+            document.getElementById('riskPercentInput').addEventListener('input', () => {
+                saveLotCalcInputs();
+                updateLotSizeCalc(
+                    lastSignalEntry, lastSignalSL
+                );
+            });
 
             // Daily updates
             renderAllLessons();
