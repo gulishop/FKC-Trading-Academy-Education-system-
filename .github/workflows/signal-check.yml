@@ -1,1 +1,44 @@
 
+name: Background Signal Check
+
+# Runs every 5 minutes -- GitHub's minimum interval for scheduled
+# workflows, and not perfectly guaranteed (GitHub can delay cron runs
+# a few extra minutes during high load -- documented, not a bug in
+# this workflow). This is the honest ceiling of free background
+# checking without paying for a dedicated always-on server.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {} # lets you trigger it manually from the Actions tab to test
+
+permissions:
+  contents: write # needed to commit the updated price-history.json back
+
+jobs:
+  check-signal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install firebase-admin
+        run: npm install firebase-admin
+
+      - name: Run signal check
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FCM_TOKENS: ${{ secrets.FCM_TOKENS }}
+        run: node scripts/check-signal.js
+
+      - name: Commit updated state
+        run: |
+          git config user.name "fkc-signal-bot"
+          git config user.email "actions@github.com"
+          git add state/
+          git diff --cached --quiet || git commit -m "Update signal state [skip ci]"
+          git push
