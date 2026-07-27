@@ -4315,6 +4315,19 @@
             const setupBox = document.getElementById('bgPushSetup');
             const tokenBox = document.getElementById('fcmTokenBox');
 
+            // Already enabled on this device from an earlier visit --
+            // don't re-run the whole flow and pop the token box back up
+            // every time the user taps the (now green) button. Just
+            // confirm it's active. They can still get to the token again
+            // via the "Copy Token" flow below only if it's genuinely not
+            // enabled yet.
+            let alreadyEnabled = false;
+            try { alreadyEnabled = localStorage.getItem('bgPushEnabled') === '1'; } catch (e) { /* ignore */ }
+            if (alreadyEnabled) {
+                showNotification('✅ Push Already Enabled', 'Background push is already active on this device');
+                return;
+            }
+
             if (firebaseConfig.apiKey === "REPLACE_ME" || FIREBASE_VAPID_KEY === "REPLACE_ME") {
                 setupBox.style.display = 'block';
                 tokenBox.value = '⚠️ Firebase not configured yet. Follow the setup guide to create a free Firebase project and paste your config into firebaseConfig (index.html) and firebase-messaging-sw.js.';
