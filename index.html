@@ -4342,6 +4342,7 @@
                 tokenBox.value = token;
                 document.getElementById('enableBgPushBtn').textContent = '🌐 Push Enabled';
                 document.getElementById('enableBgPushBtn').style.color = 'var(--green)';
+                try { localStorage.setItem('bgPushEnabled', '1'); } catch (e) { /* storage unavailable -- not critical */ }
             } catch (e) {
                 setupBox.style.display = 'block';
                 tokenBox.value = 'Setup error: ' + e.message + ' -- check firebaseConfig / VAPID key / that firebase-messaging-sw.js is at your site root.';
@@ -5303,6 +5304,19 @@
             // time the page loads.
             loadSignalHistory();
             updateHistoryUI();
+
+            // If background push was already enabled on this device in an
+            // earlier visit, show the button as already enabled (green)
+            // right away, instead of reverting to "Enable Background Push"
+            // and forcing the user to re-click and see the token box again
+            // on every refresh.
+            try {
+                if (localStorage.getItem('bgPushEnabled') === '1') {
+                    const btn = document.getElementById('enableBgPushBtn');
+                    btn.textContent = '🌐 Push Enabled';
+                    btn.style.color = 'var(--green)';
+                }
+            } catch (e) { /* storage unavailable -- not critical */ }
 
             // No fake seed values -- the UI stays at "--" until the first
             // real price tick arrives from gold-api.com via runEngine().
