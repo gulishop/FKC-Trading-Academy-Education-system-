@@ -2301,32 +2301,6 @@
     }
     </script>
 
-    <!-- JSON-LD Structured Data: VideoObject (Trading Tutorial Videos) -->
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@graph": [
-            {
-                "@type": "VideoObject",
-                "name": "FKC Trading Academy - Trading Tutorial Part 2",
-                "description": "XAUUSD Gold trading tutorial by FKC Trading Academy covering Smart Money Concepts (SMC) and ICT trading strategies.",
-                "thumbnailUrl": "https://i.ytimg.com/vi/D-gCwP7U1_s/hqdefault.jpg",
-                "uploadDate": "2024-01-01",
-                "embedUrl": "https://www.youtube-nocookie.com/embed/D-gCwP7U1_s",
-                "contentUrl": "https://youtu.be/D-gCwP7U1_s"
-            },
-            {
-                "@type": "VideoObject",
-                "name": "FKC Trading Academy - Trading Tutorial Part 3",
-                "description": "XAUUSD Gold trading tutorial by FKC Trading Academy covering Smart Money Concepts (SMC) and ICT trading strategies.",
-                "thumbnailUrl": "https://i.ytimg.com/vi/NKagLb9NugU/hqdefault.jpg",
-                "uploadDate": "2024-01-01",
-                "embedUrl": "https://www.youtube-nocookie.com/embed/NKagLb9NugU",
-                "contentUrl": "https://youtu.be/NKagLb9NugU"
-            }
-        ]
-    }
-    </script>
     <!-- Firebase SDK -- for background push notifications only. Loaded
          but does nothing until enableBackgroundPush() runs with a real
          Firebase project config filled in (see setup guide). -->
@@ -2366,6 +2340,7 @@
 
         <!-- VIEW / THEME TOGGLE -->
         <div class="view-toggle-bar">
+            <button class="view-toggle-btn" id="installAppBtn" onclick="installApp()" style="display:none;">📲 Install App</button>
             <button class="view-toggle-btn" id="desktopModeBtn" onclick="toggleDesktopMode()">🖥️ Desktop</button>
             <button class="view-toggle-btn" id="lightModeBtn" onclick="toggleLightMode()">☀️ Light</button>
         </div>
@@ -2743,25 +2718,6 @@
             <div id="quoteList"></div>
         </div>
 
-        <!-- VIDEO TUTORIALS -->
-        <div class="video-card" id="videoCard">
-            <div class="video-title">🎬 Trading Video Tutorials</div>
-            <div class="video-item">
-                <a class="video-thumb-link" href="https://youtu.be/D-gCwP7U1_s" target="_blank" rel="noopener" style="background-image:url('https://i.ytimg.com/vi/D-gCwP7U1_s/hqdefault.jpg');">
-                    <span class="play-overlay"></span>
-                    <span class="watch-label">▶ Watch on YouTube</span>
-                </a>
-                <div class="video-caption">📌 Trading Tutorial Part 2</div>
-            </div>
-            <div class="video-item">
-                <a class="video-thumb-link" href="https://youtu.be/NKagLb9NugU" target="_blank" rel="noopener" style="background-image:url('https://i.ytimg.com/vi/NKagLb9NugU/hqdefault.jpg');">
-                    <span class="play-overlay"></span>
-                    <span class="watch-label">▶ Watch on YouTube</span>
-                </a>
-                <div class="video-caption">📌 Trading Tutorial Part 3</div>
-            </div>
-        </div>
-
         <!-- CONTACT / FOUNDER -->
         <div class="contact-card">
             <div class="contact-avatar">🎓</div>
@@ -2772,6 +2728,7 @@
             <div class="contact-actions">
                 <a class="contact-btn call" href="tel:+923000625240" title="Call">📞</a>
                 <a class="contact-btn whatsapp" href="https://wa.me/923000625240" target="_blank" rel="noopener" title="WhatsApp">💬</a>
+                <a class="contact-btn telegram" href="https://t.me/FKCTradingAcademyEdu" target="_blank" rel="noopener" title="Telegram" style="background:#229ED9;color:#fff;">📢</a>
             </div>
         </div>
 
@@ -2798,6 +2755,7 @@
         <div class="group-link-display">
             📱 WhatsApp Group: <a href="https://chat.whatsapp.com/Dy1H1evRBpT08tRTGzdxtV?s=cl&p=a&mlu=4" target="_blank">Click to Join</a>
             <button class="copy-btn" onclick="copyGroupLink()">📋 Copy</button>
+            <br>📢 Telegram Channel: <a href="https://t.me/FKCTradingAcademyEdu" target="_blank" rel="noopener">Click to Join</a>
             <br><span style="font-size:5px;opacity:0.6;">🧠 SMC AI Signals • Multi-Timeframe Analysis</span>
         </div>
 
@@ -5340,6 +5298,59 @@
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
             showNotification('📚 Course Details Sent!', 'Full course details on WhatsApp');
         });
+
+        // ============================================================
+        // PWA INSTALL (Add to Home Screen)
+        // ============================================================
+        // Chrome/Edge/Android fire 'beforeinstallprompt' when the page
+        // qualifies as an installable PWA (manifest + service worker +
+        // https). We stash that event and reveal the Install button only
+        // when it's actually available, instead of always showing a
+        // button that may not work on every browser.
+        let deferredInstallPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt = e;
+            const btn = document.getElementById('installAppBtn');
+            if (btn) btn.style.display = 'flex';
+        });
+        function installApp() {
+            const btn = document.getElementById('installAppBtn');
+            if (!deferredInstallPrompt) {
+                // iOS Safari (and any browser without native install
+                // support) has no beforeinstallprompt -- guide the user
+                // through the manual "Add to Home Screen" steps instead.
+                showNotification('📲 Install App', 'iOS: tap Share ⬆️ then "Add to Home Screen". Android/Chrome: use the browser menu → "Install app".');
+                return;
+            }
+            deferredInstallPrompt.prompt();
+            deferredInstallPrompt.userChoice.then((choice) => {
+                if (choice.outcome === 'accepted') {
+                    showNotification('✅ Installing', 'FKC Trading Academy is being added to your home screen.');
+                }
+                deferredInstallPrompt = null;
+                if (btn) btn.style.display = 'none';
+            });
+        }
+        // Already running as an installed app (standalone display mode)
+        // -- hide the Install button entirely since there's nothing to
+        // install.
+        window.addEventListener('appinstalled', () => {
+            const btn = document.getElementById('installAppBtn');
+            if (btn) btn.style.display = 'none';
+        });
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+            const btn = document.getElementById('installAppBtn');
+            if (btn) btn.style.display = 'none';
+        }
+        // Register the service worker so the app meets install criteria
+        // and can be launched offline once cached. Wrapped in try/catch
+        // since some hosts (e.g. plain file:// preview) don't support it.
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(() => { /* not critical */ });
+            });
+        }
 
         // ============================================================
         // INITIALIZATION
